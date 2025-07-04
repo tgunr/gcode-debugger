@@ -263,7 +263,7 @@ class MainWindow:
         file_path = filedialog.askopenfilename(
             title="Open G-code File",
             filetypes=[
-                ("G-code files", "*.nc *.gcode *.tap *.cnc"),
+                ("G-code files", "*.nc *.gcode *.tap *.cnc *.ngc *.gc"),
                 ("All files", "*.*")
             ]
         )

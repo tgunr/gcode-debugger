@@ -256,7 +256,7 @@ class MacroPanel(ttk.LabelFrame):
         file_path = filedialog.askopenfilename(
             title="Import Macro from G-code File",
             filetypes=[
-                ("G-code files", "*.nc *.gcode *.tap"),
+                ("G-code files", "*.nc *.gcode *.tap *.ngc *.gc"),
                 ("All files", "*.*")
             ]
         )
@@ -283,8 +283,7 @@ class MacroPanel(ttk.LabelFrame):
             title="Export Macro to G-code File",
             defaultextension=".gcode",
             filetypes=[
-                ("G-code files", "*.gcode"),
-                ("NC files", "*.nc"),
+                ("G-code files", "*.gcode *.nc *.tap *.cnc *.ngc *.gc"),
                 ("All files", "*.*")
             ]
         )

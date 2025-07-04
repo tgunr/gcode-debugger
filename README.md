@@ -169,6 +169,8 @@ Supported G-code file extensions:
 - `.gcode` - G-code files
 - `.tap` - Tape files
 - `.cnc` - CNC files
+- `.ngc` - Next Generation Controller files
+- `.gc` - G-code files (short extension)
 
 ## Development
 
