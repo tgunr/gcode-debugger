@@ -1,0 +1,12 @@
+{
+  "name": "Zero All",
+  "description": "Set current position as zero for all axes",
+  "commands": [
+    "G92 X0 Y0 Z0"
+  ],
+  "created_date": "2025-07-04T12:30:24.702119",
+  "modified_date": "2025-07-04T12:30:24.702119",
+  "category": "system",
+  "color": "#2196F3",
+  "hotkey": ""
+}

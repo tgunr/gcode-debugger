@@ -1,0 +1,12 @@
+{
+  "name": "Spindle On",
+  "description": "Turn on spindle at 1000 RPM",
+  "commands": [
+    "M3 S1000"
+  ],
+  "created_date": "2025-07-04T12:30:24.702317",
+  "modified_date": "2025-07-04T12:30:24.702317",
+  "category": "system",
+  "color": "#9C27B0",
+  "hotkey": ""
+}
