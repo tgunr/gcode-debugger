@@ -347,7 +347,7 @@ class ExecutionProgressBar(ttk.Frame):
             self.progress_label.config(text="0 / 0 (0%)")
 
 class QuickCommandEntry(ttk.Frame):
-    """Quick G-code command entry widget."""
+    """Quick G-code command entry widget for MDI operations."""
     
     def __init__(self, parent):
         super().__init__(parent)
@@ -355,34 +355,94 @@ class QuickCommandEntry(ttk.Frame):
         self.command_history = []
         self.history_index = -1
         
+        # Common G-code commands
+        self.common_commands = {
+            "Home All": "G28",
+            "Zero All": "G92 X0 Y0 Z0",
+            "Zero X": "G92 X0",
+            "Zero Y": "G92 Y0",
+            "Zero Z": "G92 Z0",
+            "Spindle On": "M3 S1000",
+            "Spindle Off": "M5",
+            "Coolant On": "M8",
+            "Coolant Off": "M9"
+        }
+        
         self.setup_ui()
     
     def setup_ui(self):
         """Setup the command entry UI."""
+        # Main entry frame
+        entry_frame = ttk.Frame(self)
+        entry_frame.pack(fill=tk.X, pady=(0, 5))
+        
         # Label
-        ttk.Label(self, text="Quick Command:").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(entry_frame, text="G-code:").pack(side=tk.LEFT, padx=(0, 5))
         
         # Command entry
         self.command_var = tk.StringVar()
         self.command_entry = ttk.Entry(
-            self, 
+            entry_frame, 
             textvariable=self.command_var,
-            width=30
+            width=30,
+            font=("Consolas", 10)
         )
         self.command_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         
         # Send button
         self.send_btn = ttk.Button(
-            self, 
+            entry_frame, 
             text="Send", 
             command=self._on_send_command
         )
         self.send_btn.pack(side=tk.RIGHT)
         
+        # Quick commands frame
+        quick_frame = ttk.Frame(self)
+        quick_frame.pack(fill=tk.X)
+        
+        # Create quick command buttons in two rows
+        row1 = ttk.Frame(quick_frame)
+        row1.pack(fill=tk.X, pady=(0, 2))
+        
+        row2 = ttk.Frame(quick_frame)
+        row2.pack(fill=tk.X)
+        
+        # Add common command buttons
+        commands = list(self.common_commands.items())
+        half = len(commands) // 2 + len(commands) % 2
+        
+        # First row
+        for i in range(half):
+            label, cmd = commands[i]
+            btn = ttk.Button(
+                row1,
+                text=label,
+                command=lambda c=cmd: self._insert_command(c),
+                width=10
+            )
+            btn.pack(side=tk.LEFT, padx=(0, 2))
+        
+        # Second row
+        for i in range(half, len(commands)):
+            label, cmd = commands[i]
+            btn = ttk.Button(
+                row2,
+                text=label,
+                command=lambda c=cmd: self._insert_command(c),
+                width=10
+            )
+            btn.pack(side=tk.LEFT, padx=(0, 2))
+        
         # Bind events
         self.command_entry.bind('<Return>', lambda e: self._on_send_command())
         self.command_entry.bind('<Up>', self._on_history_up)
         self.command_entry.bind('<Down>', self._on_history_down)
+    
+    def _insert_command(self, command):
+        """Insert a command into the entry field."""
+        self.command_var.set(command)
+        self.command_entry.focus()
     
     def _on_send_command(self):
         """Handle send command."""
@@ -401,8 +461,8 @@ class QuickCommandEntry(ttk.Frame):
         
         # Send command
         main_window = self._get_main_window()
-        if main_window and hasattr(main_window, 'communicator'):
-            main_window.communicator.send_gcode(command)
+        if main_window and hasattr(main_window, 'send_gcode_command'):
+            main_window.send_gcode_command(command)
         
         # Clear entry
         self.command_var.set("")

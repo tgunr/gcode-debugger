@@ -18,6 +18,8 @@ class BBCtrlCommunicator:
         self.host = host
         self.port = port
         self.base_url = f'http://{host}' if port == 80 else f'http://{host}:{port}'
+        
+        # Use the original working WebSocket URL format (same as send_gcode_direct.py)
         self.ws_url = f'ws://{host}/websocket' if port == 80 else f'ws://{host}:{port}/websocket'
 
         # WebSocket connection
@@ -33,6 +35,7 @@ class BBCtrlCommunicator:
 
         # State tracking
         self.last_state = {}
+        self.message_counter = 1
 
     """Handles WebSocket and HTTP communication with Buildbotics controller."""
     # (Removed duplicate __init__ method)
@@ -83,7 +86,7 @@ class BBCtrlCommunicator:
         self._call_callback(self.message_callback, "WebSocket connected")
     
     def _on_message(self, ws, message):
-        """Handle incoming WebSocket messages."""
+        """Handle incoming WebSocket messages (original simple format)."""
         try:
             data = json.loads(message)
             # Update state if received
@@ -116,18 +119,41 @@ class BBCtrlCommunicator:
             self._call_callback(self.error_callback, f"Error getting state: {e}")
         return None
     
-    def send_gcode(self, command: str) -> bool:
-        """Send G-code command via WebSocket."""
+    def send_gcode(self, command: str, use_json_rpc: bool = False) -> bool:
+        """Send G-code command via WebSocket.
+        
+        Args:
+            command: The G-code command to send
+            use_json_rpc: If True, use JSON-RPC format (for MDI), otherwise send raw command (for file execution)
+        """
         if not self.connected:
             self._call_callback(self.error_callback, "Not connected to WebSocket")
             return False
         try:
-            self.ws.send(command)
+            if use_json_rpc:
+                # Use JSON-RPC format for MDI commands
+                message = {
+                    'id': int(time.time() * 1000),  # Use timestamp as ID
+                    'jsonrpc': '2.0',
+                    'method': 'gcode',
+                    'params': {'gcode': command}
+                }
+                message_str = json.dumps(message)
+                self.ws.send(message_str)
+            else:
+                # Send raw G-code for file execution (debugger) - add line terminator
+                self.ws.send(command + '\n')
+            
             self._call_callback(self.message_callback, f"Sent: {command}")
             return True
         except Exception as e:
             self._call_callback(self.error_callback, f"Error sending command: {e}")
             return False
+    
+    def send_mdi_command(self, command: str) -> bool:
+        """Send MDI command using EXACTLY the same method as debugger."""
+        # Use the exact same method as the working debugger
+        return self.send_gcode(command, use_json_rpc=False)
     
     def emergency_stop(self) -> bool:
         """Send emergency stop command."""

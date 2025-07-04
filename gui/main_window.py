@@ -14,7 +14,7 @@ from core.communication import BBCtrlCommunicator
 from core.debugger import GCodeDebugger, DebugState
 from core.macro_manager import MacroManager, MacroExecutor
 from gui.code_editor import CodeEditor
-from gui.control_panel import ControlPanel
+from gui.control_panel import ControlPanel, QuickCommandEntry
 from gui.status_panel import StatusPanel
 from gui.macro_panel import MacroPanel
 
@@ -45,6 +45,7 @@ class MainWindow:
         self.control_panel: Optional[ControlPanel] = None
         self.status_panel: Optional[StatusPanel] = None
         self.macro_panel: Optional[MacroPanel] = None
+        self.mdi_panel: Optional[QuickCommandEntry] = None
         self.console: Optional[scrolledtext.ScrolledText] = None
         
         # State variables
@@ -180,13 +181,24 @@ class MainWindow:
         self.macro_panel = MacroPanel(macro_frame, self.macro_manager)
         self.macro_panel.pack(fill=tk.BOTH, expand=True)
         
-        # Setup right panel bottom (console)
-        console_frame = ttk.LabelFrame(right_paned, text="Console Output")
-        right_paned.add(console_frame, weight=1)
+        # Setup right panel bottom (MDI + console)
+        console_container = ttk.Frame(right_paned)
+        right_paned.add(console_container, weight=1)
+        
+        # MDI panel (Manual Data Input) - now directly above console
+        mdi_frame = ttk.LabelFrame(console_container, text="Manual Data Input (MDI)")
+        mdi_frame.pack(fill=tk.X, padx=5, pady=(5, 2))
+        
+        self.mdi_panel = QuickCommandEntry(mdi_frame)
+        self.mdi_panel.pack(fill=tk.X, padx=5, pady=5)
+        
+        # Console output - now directly below MDI
+        console_frame = ttk.LabelFrame(console_container, text="Console Output")
+        console_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(2, 5))
         
         self.console = scrolledtext.ScrolledText(
-            console_frame, 
-            height=8, 
+            console_frame,
+            height=8,
             font=("Consolas", 10),
             bg="black",
             fg="green",
@@ -392,6 +404,26 @@ class MainWindow:
             self._log_message("Connection test successful")
         else:
             messagebox.showerror("Connection Test", "Connection failed!")
+    
+    def send_gcode_command(self, command):
+        """Send a G-code command to the controller via MDI."""
+        # Ensure connection for MDI command (reconnect if needed)
+        if not self.communicator.connected:
+            self._log_message("Reconnecting for MDI command...")
+            if not self.communicator.connect_websocket():
+                self._log_message("Failed to connect for MDI command", "red")
+                return False
+        
+        if not self.communicator.is_ready_for_command():
+            self._log_message("Machine not ready for commands", "red")
+            return False
+            
+        if self.communicator.send_mdi_command(command):
+            self._log_message(f"MDI: {command}")
+            return True
+        else:
+            self._log_message(f"Failed to send MDI command: {command}", "red")
+            return False
     
     # Callback handlers
     def _on_machine_state_changed(self, state):
