@@ -50,9 +50,27 @@ class ControlPanel(ttk.LabelFrame):
         )
         self.clear_bp_btn.pack(side=tk.LEFT)
         
-        # Status display has been moved to the top menu bar for better visibility
+        # Status frame
+        status_frame = ttk.LabelFrame(container, text="Status")
+        status_frame.pack(fill=tk.X, pady=(0, 5))
         
-        # E-Stop has been moved to the top menu bar for better accessibility
+        # Status label
+        self.status_label = ttk.Label(
+            status_frame,
+            text="Status: STOPPED",
+            font=("Arial", 10),
+            anchor=tk.CENTER
+        )
+        self.status_label.pack(fill=tk.X, padx=5, pady=5)
+        
+        # Position information
+        self.position_label = ttk.Label(
+            status_frame,
+            text="Position: X0.000 Y0.000 Z0.000",
+            font=("Arial", 9),
+            anchor=tk.CENTER
+        )
+        self.position_label.pack(fill=tk.X, padx=5, pady=(0, 5))
         
         # Initialize button states
         self._update_button_states()
@@ -77,12 +95,42 @@ class ControlPanel(ttk.LabelFrame):
         self._update_status_display()
     
     def _update_status_display(self):
-        """Update the status display with current debug state.
+        """Update the status display with current debug state and position."""
+        # Update status text
+        status_text = {
+            DebugState.STOPPED: "Status: STOPPED",
+            DebugState.RUNNING: "Status: RUNNING",
+            DebugState.PAUSED: "Status: PAUSED",
+            DebugState.STEPPING: "Status: STEPPING"
+        }
         
-        Note: The actual status display is now handled in the main window's menu bar.
-        This method is kept for compatibility but doesn't need to do anything.
-        """
-        pass
+        # Update status label with color coding
+        status_colors = {
+            DebugState.STOPPED: "black",
+            DebugState.RUNNING: "green",
+            DebugState.PAUSED: "orange",
+            DebugState.STEPPING: "blue"
+        }
+        
+        current_status = status_text.get(self.debug_state, "Status: UNKNOWN")
+        current_color = status_colors.get(self.debug_state, "black")
+        
+        if hasattr(self, 'status_label'):
+            self.status_label.config(
+                text=current_status,
+                foreground=current_color
+            )
+        
+        # Get position from main window if available
+        main_window = self._get_main_window()
+        if hasattr(main_window, 'get_current_position'):
+            try:
+                x, y, z = main_window.get_current_position()
+                position_text = f"Position: X{x:.3f} Y{y:.3f} Z{z:.3f}"
+                if hasattr(self, 'position_label'):
+                    self.position_label.config(text=position_text)
+            except Exception:
+                pass
     
     def _on_continue(self):
         """Handle continue button click."""

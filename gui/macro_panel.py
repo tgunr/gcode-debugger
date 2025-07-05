@@ -50,7 +50,7 @@ class MacroPanel(ttk.LabelFrame):
         # Local macro listbox with scrollbar
         self.local_macro_listbox = tk.Listbox(
             list_frame,
-            height=3,
+            height=10,  # Increased from 3 to 10 to show more macros
             font=("Arial", 8),
             selectmode=tk.SINGLE
         )
@@ -155,7 +155,7 @@ class MacroPanel(ttk.LabelFrame):
         # External macro listbox with scrollbar
         self.external_macro_listbox = tk.Listbox(
             list_frame,
-            height=3,
+            height=10,  # Increased from 3 to 10 to show more macros
             font=("Arial", 8),
             selectmode=tk.SINGLE
         )
