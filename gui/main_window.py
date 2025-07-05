@@ -122,6 +122,18 @@ class MainWindow:
         menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="Keyboard Shortcuts", command=self.show_shortcuts_help)
         help_menu.add_command(label="About", command=self.show_about)
+        
+        # Add E-Stop button to the far right of the menu bar
+        menubar.add_command(
+            label="🚨 E-STOP", 
+            command=self.emergency_stop, 
+            activebackground="red",
+            activeforeground="white",
+            background="red",
+            foreground="white",
+            font=("Arial", 10, "bold"),
+            compound=tk.RIGHT
+        )
     
     def _setup_toolbar(self):
         """Setup the toolbar."""
