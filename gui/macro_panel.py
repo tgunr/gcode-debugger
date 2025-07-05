@@ -45,13 +45,13 @@ class MacroPanel(ttk.LabelFrame):
         """Setup the local macros tab."""
         # Local macro list frame
         list_frame = ttk.Frame(self.local_frame)
-        list_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 5), padx=5)
+        list_frame.pack(fill=tk.X, pady=(5, 5), padx=5)
         
         # Local macro listbox with scrollbar
         self.local_macro_listbox = tk.Listbox(
             list_frame,
-            height=8,
-            font=("Arial", 9),
+            height=3,
+            font=("Arial", 8),
             selectmode=tk.SINGLE
         )
         self.local_macro_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -64,89 +64,85 @@ class MacroPanel(ttk.LabelFrame):
         
         # Bind events for local macros
         self.local_macro_listbox.bind('<<ListboxSelect>>', self._on_local_macro_select)
-        self.local_macro_listbox.bind('<Double-Button-1>', self._on_execute_local_macro)
+        self.local_macro_listbox.bind('<Double-Button-1>', self._on_view_local_macro_in_editor)
         
         # Local macro buttons frame
         local_btn_frame = ttk.Frame(self.local_frame)
         local_btn_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
         
-        # Row 1: Execution buttons for local macros
-        local_exec_frame = ttk.Frame(local_btn_frame)
-        local_exec_frame.pack(fill=tk.X, pady=(0, 5))
+        # Row 1: Main action buttons
+        local_main_frame = ttk.Frame(local_btn_frame)
+        local_main_frame.pack(fill=tk.X, pady=(0, 2))
         
         self.local_execute_btn = ttk.Button(
-            local_exec_frame,
-            text="▶️ Execute",
+            local_main_frame,
+            text="▶️ Run",
             command=self._on_execute_local_macro,
-            width=12
+            width=8
         )
-        self.local_execute_btn.pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.local_stop_btn = ttk.Button(
-            local_exec_frame,
-            text="⏹️ Stop",
-            command=self._on_stop_local_macro,
-            width=12,
-            state=tk.DISABLED
-        )
-        self.local_stop_btn.pack(side=tk.LEFT)
-        
-        # Row 2: Management buttons for local macros
-        local_mgmt_frame = ttk.Frame(local_btn_frame)
-        local_mgmt_frame.pack(fill=tk.X, pady=(0, 5))
+        self.local_execute_btn.pack(side=tk.LEFT, padx=(0, 2))
         
         self.local_new_btn = ttk.Button(
-            local_mgmt_frame,
+            local_main_frame,
             text="➕ New",
             command=self._on_new_local_macro,
-            width=12
+            width=8
         )
-        self.local_new_btn.pack(side=tk.LEFT, padx=(0, 5))
+        self.local_new_btn.pack(side=tk.LEFT, padx=(0, 2))
         
         self.local_edit_btn = ttk.Button(
-            local_mgmt_frame,
+            local_main_frame,
             text="✏️ Edit",
             command=self._on_edit_local_macro,
-            width=12,
+            width=8,
             state=tk.DISABLED
         )
-        self.local_edit_btn.pack(side=tk.LEFT, padx=(0, 5))
+        self.local_edit_btn.pack(side=tk.LEFT, padx=(0, 2))
         
         self.local_delete_btn = ttk.Button(
-            local_mgmt_frame,
-            text="🗑️ Delete",
+            local_main_frame,
+            text="🗑️ Del",
             command=self._on_delete_local_macro,
-            width=12,
+            width=8,
             state=tk.DISABLED
         )
         self.local_delete_btn.pack(side=tk.LEFT)
         
-        # Row 3: Import/Export buttons for local macros
-        local_io_frame = ttk.Frame(local_btn_frame)
-        local_io_frame.pack(fill=tk.X)
+        # Row 2: Secondary buttons
+        local_sec_frame = ttk.Frame(local_btn_frame)
+        local_sec_frame.pack(fill=tk.X)
         
-        self.local_import_btn = ttk.Button(
-            local_io_frame,
-            text="📁 Import",
-            command=self._on_import_local_macro,
-            width=12
-        )
-        self.local_import_btn.pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.local_export_btn = ttk.Button(
-            local_io_frame,
-            text="💾 Export",
-            command=self._on_export_local_macro,
-            width=12,
+        self.local_stop_btn = ttk.Button(
+            local_sec_frame,
+            text="⏹️ Stop",
+            command=self._on_stop_local_macro,
+            width=8,
             state=tk.DISABLED
         )
-        self.local_export_btn.pack(side=tk.LEFT, padx=(0, 5))
+        self.local_stop_btn.pack(side=tk.LEFT, padx=(0, 2))
+        
+        self.local_import_btn = ttk.Button(
+            local_sec_frame,
+            text="📁 Import",
+            command=self._on_import_local_macro,
+            width=8
+        )
+        self.local_import_btn.pack(side=tk.LEFT, padx=(0, 2))
+        
+        self.local_export_btn = ttk.Button(
+            local_sec_frame,
+            text="💾 Export",
+            command=self._on_export_local_macro,
+            width=8,
+            state=tk.DISABLED
+        )
+        self.local_export_btn.pack(side=tk.LEFT, padx=(0, 2))
         
         self.local_refresh_btn = ttk.Button(
-            local_io_frame,
-            text="🔄 Refresh",
+            local_sec_frame,
+            text="🔄",
             command=self._refresh_local_macro_list,
-            width=12
+            width=4
         )
         self.local_refresh_btn.pack(side=tk.LEFT)
     
@@ -154,13 +150,13 @@ class MacroPanel(ttk.LabelFrame):
         """Setup the external macros tab."""
         # External macro list frame
         list_frame = ttk.Frame(self.external_frame)
-        list_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 5), padx=5)
+        list_frame.pack(fill=tk.X, pady=(5, 5), padx=5)
         
         # External macro listbox with scrollbar
         self.external_macro_listbox = tk.Listbox(
             list_frame,
-            height=8,
-            font=("Arial", 9),
+            height=3,
+            font=("Arial", 8),
             selectmode=tk.SINGLE
         )
         self.external_macro_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -173,89 +169,85 @@ class MacroPanel(ttk.LabelFrame):
         
         # Bind events for external macros
         self.external_macro_listbox.bind('<<ListboxSelect>>', self._on_external_macro_select)
-        self.external_macro_listbox.bind('<Double-Button-1>', self._on_execute_external_macro)
+        self.external_macro_listbox.bind('<Double-Button-1>', self._on_view_external_macro_in_editor)
         
         # External macro buttons frame
         external_btn_frame = ttk.Frame(self.external_frame)
         external_btn_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
         
-        # Row 1: Execution buttons for external macros
-        external_exec_frame = ttk.Frame(external_btn_frame)
-        external_exec_frame.pack(fill=tk.X, pady=(0, 5))
+        # Row 1: Main action buttons
+        external_main_frame = ttk.Frame(external_btn_frame)
+        external_main_frame.pack(fill=tk.X, pady=(0, 2))
         
         self.external_execute_btn = ttk.Button(
-            external_exec_frame,
-            text="▶️ Execute",
+            external_main_frame,
+            text="▶️ Run",
             command=self._on_execute_external_macro,
-            width=12
+            width=8
         )
-        self.external_execute_btn.pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.external_stop_btn = ttk.Button(
-            external_exec_frame,
-            text="⏹️ Stop",
-            command=self._on_stop_external_macro,
-            width=12,
-            state=tk.DISABLED
-        )
-        self.external_stop_btn.pack(side=tk.LEFT)
-        
-        # Row 2: Management buttons for external macros
-        external_mgmt_frame = ttk.Frame(external_btn_frame)
-        external_mgmt_frame.pack(fill=tk.X, pady=(0, 5))
+        self.external_execute_btn.pack(side=tk.LEFT, padx=(0, 2))
         
         self.external_new_btn = ttk.Button(
-            external_mgmt_frame,
+            external_main_frame,
             text="➕ New",
             command=self._on_new_external_macro,
-            width=12
+            width=8
         )
-        self.external_new_btn.pack(side=tk.LEFT, padx=(0, 5))
+        self.external_new_btn.pack(side=tk.LEFT, padx=(0, 2))
         
         self.external_edit_btn = ttk.Button(
-            external_mgmt_frame,
+            external_main_frame,
             text="✏️ Edit",
             command=self._on_edit_external_macro,
-            width=12,
+            width=8,
             state=tk.DISABLED
         )
-        self.external_edit_btn.pack(side=tk.LEFT, padx=(0, 5))
+        self.external_edit_btn.pack(side=tk.LEFT, padx=(0, 2))
         
         self.external_delete_btn = ttk.Button(
-            external_mgmt_frame,
-            text="🗑️ Delete",
+            external_main_frame,
+            text="🗑️ Del",
             command=self._on_delete_external_macro,
-            width=12,
+            width=8,
             state=tk.DISABLED
         )
         self.external_delete_btn.pack(side=tk.LEFT)
         
-        # Row 3: Import/Export buttons for external macros
-        external_io_frame = ttk.Frame(external_btn_frame)
-        external_io_frame.pack(fill=tk.X)
+        # Row 2: Secondary buttons
+        external_sec_frame = ttk.Frame(external_btn_frame)
+        external_sec_frame.pack(fill=tk.X)
         
-        self.external_import_btn = ttk.Button(
-            external_io_frame,
-            text="📁 Import",
-            command=self._on_import_external_macro,
-            width=12
-        )
-        self.external_import_btn.pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.external_export_btn = ttk.Button(
-            external_io_frame,
-            text="💾 Export",
-            command=self._on_export_external_macro,
-            width=12,
+        self.external_stop_btn = ttk.Button(
+            external_sec_frame,
+            text="⏹️ Stop",
+            command=self._on_stop_external_macro,
+            width=8,
             state=tk.DISABLED
         )
-        self.external_export_btn.pack(side=tk.LEFT, padx=(0, 5))
+        self.external_stop_btn.pack(side=tk.LEFT, padx=(0, 2))
+        
+        self.external_import_btn = ttk.Button(
+            external_sec_frame,
+            text="📁 Import",
+            command=self._on_import_external_macro,
+            width=8
+        )
+        self.external_import_btn.pack(side=tk.LEFT, padx=(0, 2))
+        
+        self.external_export_btn = ttk.Button(
+            external_sec_frame,
+            text="💾 Export",
+            command=self._on_export_external_macro,
+            width=8,
+            state=tk.DISABLED
+        )
+        self.external_export_btn.pack(side=tk.LEFT, padx=(0, 2))
         
         self.external_refresh_btn = ttk.Button(
-            external_io_frame,
-            text="🔄 Refresh",
+            external_sec_frame,
+            text="🔄",
             command=self._refresh_external_macro_list,
-            width=12
+            width=4
         )
         self.external_refresh_btn.pack(side=tk.LEFT)
     
@@ -282,8 +274,8 @@ class MacroPanel(ttk.LabelFrame):
             color_prefix = self._get_category_prefix(macro.category)
             display_text = f"{color_prefix} {macro.name}"
             if macro.description:
-                display_text += f" - {macro.description[:30]}"
-                if len(macro.description) > 30:
+                display_text += f" - {macro.description[:25]}"
+                if len(macro.description) > 25:
                     display_text += "..."
             
             self.local_macro_listbox.insert(tk.END, display_text)
@@ -300,8 +292,8 @@ class MacroPanel(ttk.LabelFrame):
             color_prefix = self._get_category_prefix(macro.category)
             display_text = f"{color_prefix} {macro.name}"
             if macro.description:
-                display_text += f" - {macro.description[:30]}"
-                if len(macro.description) > 30:
+                display_text += f" - {macro.description[:25]}"
+                if len(macro.description) > 25:
                     display_text += "..."
             
             self.external_macro_listbox.insert(tk.END, display_text)
@@ -376,7 +368,7 @@ class MacroPanel(ttk.LabelFrame):
         # Get main window and execute local macro
         main_window = self._get_main_window()
         if main_window and hasattr(main_window, 'execute_local_macro'):
-            main_window.execute_local_macro(self.selected_local_macro)
+            main_window.execute_local_macro(self.selected_local_macro.name)
             self.local_stop_btn.config(state=tk.NORMAL)
     
     def _on_stop_local_macro(self):
@@ -388,14 +380,17 @@ class MacroPanel(ttk.LabelFrame):
     
     def _on_new_local_macro(self):
         """Create a new local macro."""
-        dialog = LocalMacroEditDialog(self, "Create New Local Macro")
-        if dialog.result:
-            name, description, commands, category = dialog.result
-            if self.local_macro_manager.create_local_macro(name, commands, description, category):
-                self._refresh_local_macro_list()
-                messagebox.showinfo("Success", f"Local macro '{name}' created successfully!")
-            else:
-                messagebox.showerror("Error", f"Failed to create local macro '{name}'. Name may already exist.")
+        try:
+            dialog = LocalMacroEditDialog(self, "Create New Local Macro")
+            if dialog.result:
+                name, description, commands, category = dialog.result
+                if self.local_macro_manager.create_local_macro(name, commands, description, category):
+                    self._refresh_local_macro_list()
+                    messagebox.showinfo("Success", f"Local macro '{name}' created successfully!")
+                else:
+                    messagebox.showerror("Error", f"Failed to create local macro '{name}'. Name may already exist.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to create local macro dialog: {e}")
     
     def _on_edit_local_macro(self):
         """Edit the selected local macro."""
@@ -406,7 +401,7 @@ class MacroPanel(ttk.LabelFrame):
         if dialog.result:
             name, description, commands, category = dialog.result
             if self.local_macro_manager.update_local_macro(
-                self.selected_local_macro.name, 
+                name, 
                 commands=commands, 
                 description=description, 
                 category=category
@@ -478,6 +473,29 @@ class MacroPanel(ttk.LabelFrame):
             else:
                 messagebox.showerror("Error", f"Failed to export local macro.")
     
+    def _on_view_local_macro_in_editor(self, event=None):
+        """View the selected local macro in the code editor."""
+        if not self.selected_local_macro:
+            return
+        
+        # Get main window and load macro into editor
+        main_window = self._get_main_window()
+        if main_window and hasattr(main_window, 'code_editor'):
+            # Create a temporary G-code content for the macro
+            macro_content = f"; Local Macro: {self.selected_local_macro.name}\n"
+            macro_content += f"; Description: {self.selected_local_macro.description}\n"
+            macro_content += f"; Category: {self.selected_local_macro.category}\n"
+            macro_content += f"; Type: Local (executed by debugger)\n"
+            macro_content += ";\n"
+            
+            for command in self.selected_local_macro.commands:
+                macro_content += f"{command}\n"
+            
+            # Load into code editor
+            main_window.code_editor.load_text_content(macro_content, f"Local Macro: {self.selected_local_macro.name}")
+            main_window.current_file_path = f"[Local Macro] {self.selected_local_macro.name}"
+            main_window.file_status.set(f"Viewing: {self.selected_local_macro.name} (Local Macro)")
+    
     # External macro execution and management methods
     def _on_execute_external_macro(self, event=None):
         """Execute the selected external macro."""
@@ -517,7 +535,7 @@ class MacroPanel(ttk.LabelFrame):
         if dialog.result:
             name, description, commands, category = dialog.result
             if self.macro_manager.update_macro(
-                self.selected_macro.name, 
+                name, 
                 commands=commands, 
                 description=description, 
                 category=category
@@ -589,6 +607,29 @@ class MacroPanel(ttk.LabelFrame):
             else:
                 messagebox.showerror("Error", f"Failed to export external macro.")
     
+    def _on_view_external_macro_in_editor(self, event=None):
+        """View the selected external macro in the code editor."""
+        if not self.selected_macro:
+            return
+        
+        # Get main window and load macro into editor
+        main_window = self._get_main_window()
+        if main_window and hasattr(main_window, 'code_editor'):
+            # Create a temporary G-code content for the macro
+            macro_content = f"; External Macro: {self.selected_macro.name}\n"
+            macro_content += f"; Description: {self.selected_macro.description}\n"
+            macro_content += f"; Category: {self.selected_macro.category}\n"
+            macro_content += f"; Type: External (executed by controller)\n"
+            macro_content += ";\n"
+            
+            for command in self.selected_macro.commands:
+                macro_content += f"{command}\n"
+            
+            # Load into code editor
+            main_window.code_editor.load_text_content(macro_content, f"External Macro: {self.selected_macro.name}")
+            main_window.current_file_path = f"[External Macro] {self.selected_macro.name}"
+            main_window.file_status.set(f"Viewing: {self.selected_macro.name} (External Macro)")
+    
     def _get_main_window(self):
         """Get reference to main window."""
         parent = self.master
@@ -612,6 +653,9 @@ class LocalMacroEditDialog:
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
+        # Add protocol handler for window close
+        self.dialog.protocol("WM_DELETE_WINDOW", self._on_cancel)
+        
         # Center the dialog
         self.dialog.update_idletasks()
         x = (self.dialog.winfo_screenwidth() // 2) - (600 // 2)
@@ -629,7 +673,12 @@ class LocalMacroEditDialog:
             self.commands_text.insert('1.0', '\n'.join(local_macro.commands))
         
         # Wait for dialog
-        self.dialog.wait_window()
+        try:
+            self.dialog.wait_window()
+        except Exception:
+            # If wait_window fails, just destroy the dialog
+            if self.dialog.winfo_exists():
+                self.dialog.destroy()
     
     def setup_ui(self):
         """Setup the dialog UI."""
@@ -698,28 +747,37 @@ weight=1)
     
     def _on_ok(self):
         """Handle OK button."""
-        name = self.name_var.get().strip()
-        description = self.description_var.get().strip()
-        category = self.category_var.get()
-        commands_text = self.commands_text.get('1.0', tk.END).strip()
-        
-        if not name:
-            messagebox.showerror("Error", "Name is required!")
-            return
-        
-        if not commands_text:
-            messagebox.showerror("Error", "Commands are required!")
-            return
-        
-        # Parse commands
-        commands = [line.strip() for line in commands_text.split('\n') if line.strip()]
-        
-        self.result = (name, description, commands, category)
-        self.dialog.destroy()
+        try:
+            name = self.name_var.get().strip()
+            description = self.description_var.get().strip()
+            category = self.category_var.get()
+            commands_text = self.commands_text.get('1.0', tk.END).strip()
+            
+            if not name:
+                messagebox.showerror("Error", "Name is required!")
+                return
+            
+            if not commands_text:
+                messagebox.showerror("Error", "Commands are required!")
+                return
+            
+            # Parse commands
+            commands = [line.strip() for line in commands_text.split('\n') if line.strip()]
+            
+            self.result = (name, description, commands, category)
+            if self.dialog.winfo_exists():
+                self.dialog.destroy()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to process dialog: {e}")
     
     def _on_cancel(self):
         """Handle Cancel button."""
-        self.dialog.destroy()
+        try:
+            self.result = None
+            if self.dialog.winfo_exists():
+                self.dialog.destroy()
+        except Exception:
+            pass
 
 class MacroEditDialog:
     """Dialog for creating/editing external macros."""
@@ -734,6 +792,9 @@ class MacroEditDialog:
         self.dialog.geometry("600x500")
         self.dialog.transient(parent)
         self.dialog.grab_set()
+        
+        # Add protocol handler for window close
+        self.dialog.protocol("WM_DELETE_WINDOW", self._on_cancel)
         
         # Center the dialog
         self.dialog.update_idletasks()
@@ -752,7 +813,12 @@ class MacroEditDialog:
             self.commands_text.insert('1.0', '\n'.join(macro.commands))
         
         # Wait for dialog
-        self.dialog.wait_window()
+        try:
+            self.dialog.wait_window()
+        except Exception:
+            # If wait_window fails, just destroy the dialog
+            if self.dialog.winfo_exists():
+                self.dialog.destroy()
     
     def setup_ui(self):
         """Setup the dialog UI."""
@@ -820,25 +886,34 @@ class MacroEditDialog:
     
     def _on_ok(self):
         """Handle OK button."""
-        name = self.name_var.get().strip()
-        description = self.description_var.get().strip()
-        category = self.category_var.get()
-        commands_text = self.commands_text.get('1.0', tk.END).strip()
-        
-        if not name:
-            messagebox.showerror("Error", "Name is required!")
-            return
-        
-        if not commands_text:
-            messagebox.showerror("Error", "Commands are required!")
-            return
-        
-        # Parse commands
-        commands = [line.strip() for line in commands_text.split('\n') if line.strip()]
-        
-        self.result = (name, description, commands, category)
-        self.dialog.destroy()
+        try:
+            name = self.name_var.get().strip()
+            description = self.description_var.get().strip()
+            category = self.category_var.get()
+            commands_text = self.commands_text.get('1.0', tk.END).strip()
+            
+            if not name:
+                messagebox.showerror("Error", "Name is required!")
+                return
+            
+            if not commands_text:
+                messagebox.showerror("Error", "Commands are required!")
+                return
+            
+            # Parse commands
+            commands = [line.strip() for line in commands_text.split('\n') if line.strip()]
+            
+            self.result = (name, description, commands, category)
+            if self.dialog.winfo_exists():
+                self.dialog.destroy()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to process dialog: {e}")
     
     def _on_cancel(self):
         """Handle Cancel button."""
-        self.dialog.destroy()
+        try:
+            self.result = None
+            if self.dialog.winfo_exists():
+                self.dialog.destroy()
+        except Exception:
+            pass

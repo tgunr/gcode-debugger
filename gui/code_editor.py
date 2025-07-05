@@ -179,6 +179,37 @@ class CodeEditor(ttk.Frame):
         self._apply_syntax_highlighting()
         self._mark_modified_lines()
     
+    def load_text_content(self, content: str, title: str = "Text Content"):
+        """Load text content directly into the editor (for viewing macros, etc.)."""
+        # Clear existing content
+        self.text_widget.delete('1.0', tk.END)
+        
+        # Clear parser since we're not loading from a parser
+        self.parser = None
+        
+        # Insert content
+        self.text_widget.insert('1.0', content)
+        
+        # Clear line numbers since we don't have a parser
+        self.line_numbers.config(state='normal')
+        self.line_numbers.delete('1.0', tk.END)
+        
+        # Add simple line numbers
+        lines = content.split('\n')
+        for i in range(1, len(lines) + 1):
+            self.line_numbers.insert(tk.END, f"  {i:4d}\n")
+        
+        self.line_numbers.config(state='disabled')
+        
+        # Apply basic syntax highlighting
+        self._apply_syntax_highlighting()
+        
+        # Clear context window
+        self.context_text.config(state='normal')
+        self.context_text.delete('1.0', tk.END)
+        self.context_text.insert('1.0', f"Viewing: {title}\n\nDouble-click a macro to view its content here.")
+        self.context_text.config(state='disabled')
+    
     def _update_line_numbers(self):
         """Update the line numbers display."""
         self.line_numbers.config(state='normal')
