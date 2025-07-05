@@ -9,11 +9,14 @@ A comprehensive debugging tool for stepping through G-code files with full contr
 - **Line editing** capability during debugging
 - **Go-back functionality** with state restoration
 - **Context window** showing lines around current execution
-- **Macro system** for common operations
+- **Local Macro Systen for holding gcode to be sent but not stored on the controller
+- **External Macro system** for creeating, editing, and running of macros stored on the controller
 - **Real-time machine monitoring**
 - **Emergency stop** with ESC key
 - **Syntax highlighting** for G-code
 - **Skip and jump** functionality
+- **MDI** for manual G-code input
+- **MSG and DEBUG commands** for sending messages to the controller to display variables
 
 ## Installation
 
@@ -82,29 +85,31 @@ chmod +x main.py
 - Use Debug menu to clear all breakpoints
 
 ### Line Editing
-
 - Double-click on G-code lines to edit them
 - Modified lines are highlighted in yellow
-- Changes are applied immediately to the debugging session
+- Changes are applied immediately to the debugging session and the G-code file
 
-### Macros
-
+### LocalMacros
 The application includes a built-in macro system:
+- **Local macros are stored in the debugger and are not sent to the controller**
+- **Local macros are not stored in a local file
+- **Local macros are selected from a local panel**
 
+#### External Macros
+External macros are stored on the controller and are executed by the controller when the macro is run.
 - **System Macros**: Home All, Zero All, Safe Z, Spindle On/Off
 - **Tool Change**: Automated tool change sequence
 - **Probing**: Z-axis probing with automatic zero setting
 - **Custom Macros**: Create your own macro sequences
 
 #### Creating Macros
-
-1. Click "➕ New" in the Macros panel
-2. Enter name, description, and G-code commands
-3. Choose a category for organization
-4. Save the macro for future use
+1. Select Local or External from the Macros panel
+2. Click "➕ New" in the Macros panel
+3. Enter name, description, and G-code commands
+4. Choose a category for organization
+5. Save the macro for future use
 
 #### Importing/Exporting Macros
-
 - **Import**: Load macros from existing G-code files
 - **Export**: Save macros as G-code files for external use
 
@@ -120,7 +125,6 @@ The status panel shows real-time information:
 - **Units**: Imperial or metric mode
 
 ### Context Window
-
 Shows lines around the current execution point:
 - Current line marked with ►
 - Breakpoints shown with red highlighting

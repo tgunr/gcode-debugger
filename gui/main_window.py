@@ -13,6 +13,7 @@ from typing import Optional
 from core.communication import BBCtrlCommunicator
 from core.debugger import GCodeDebugger, DebugState
 from core.macro_manager import MacroManager, MacroExecutor
+from core.local_macro_manager import LocalMacroManager, LocalMacroExecutor
 from gui.code_editor import CodeEditor
 from gui.control_panel import ControlPanel, QuickCommandEntry
 from gui.status_panel import StatusPanel
@@ -42,6 +43,10 @@ class MainWindow:
         self.debugger = GCodeDebugger(self.communicator)
         self.macro_manager = MacroManager("macros")
         self.macro_executor = MacroExecutor(self.communicator)
+        
+        # Initialize local macro components
+        self.local_macro_manager = LocalMacroManager("local_macros")
+        self.local_macro_executor = LocalMacroExecutor(self.communicator)
         
         # GUI components
         self.code_editor: Optional[CodeEditor] = None
@@ -181,7 +186,7 @@ class MainWindow:
         macro_frame = ttk.Frame(right_paned)
         right_paned.add(macro_frame, weight=1)
         
-        self.macro_panel = MacroPanel(macro_frame, self.macro_manager)
+        self.macro_panel = MacroPanel(macro_frame, self.macro_manager, self.local_macro_manager)
         self.macro_panel.pack(fill=tk.BOTH, expand=True)
         
         # Setup right panel bottom (MDI + console)
@@ -248,6 +253,13 @@ class MainWindow:
             progress=self._on_macro_progress,
             completion=self._on_macro_completed,
             error=self._on_macro_error
+        )
+        
+        # Local macro executor callbacks
+        self.local_macro_executor.set_callbacks(
+            progress=self._on_local_macro_progress,
+            completion=self._on_local_macro_completed,
+            error=self._on_local_macro_error
         )
     
     def _setup_keyboard_shortcuts(self):
@@ -427,6 +439,21 @@ class MainWindow:
             self._log_message(f"Failed to send MDI command: {command}", "red")
             return False
     
+    def execute_local_macro(self, macro_name):
+        """Execute a local macro by name."""
+        try:
+            local_macro = self.local_macro_manager.get_local_macro(macro_name)
+            if local_macro:
+                self._log_message(f"Executing local macro: {macro_name}")
+                self.local_macro_executor.execute_local_macro(local_macro)
+                return True
+            else:
+                self._log_message(f"Local macro not found: {macro_name}", "red")
+                return False
+        except Exception as e:
+            self._log_message(f"Failed to execute local macro '{macro_name}': {e}", "red")
+            return False
+    
     # Callback handlers
     def _on_machine_state_changed(self, state):
         """Handle machine state changes."""
@@ -502,6 +529,24 @@ class MainWindow:
     def _on_macro_error(self, error):
         """Handle macro execution errors."""
         self._thread_safe_callback(self._log_message, f"MACRO ERROR: {error}", "red")
+    
+    def _on_local_macro_progress(self, progress, command):
+        """Handle local macro execution progress."""
+        self._thread_safe_callback(self._log_message, f"Local macro progress: {progress:.1f}% - {command}")
+    
+    def _on_local_macro_completed(self, macro_name):
+        """Handle local macro completion."""
+        self._thread_safe_callback(self._log_message, f"Local macro '{macro_name}' completed")
+        # Re-enable the stop button in macro panel
+        if self.macro_panel:
+            self.macro_panel.local_stop_btn.config(state=tk.DISABLED)
+    
+    def _on_local_macro_error(self, error):
+        """Handle local macro execution errors."""
+        self._thread_safe_callback(self._log_message, f"LOCAL MACRO ERROR: {error}", "red")
+        # Re-enable the stop button in macro panel
+        if self.macro_panel:
+            self.macro_panel.local_stop_btn.config(state=tk.DISABLED)
     
     # Utility methods
     def _log_message(self, message, color="green"):
