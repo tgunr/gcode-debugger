@@ -123,7 +123,23 @@ class MainWindow:
         help_menu.add_command(label="Keyboard Shortcuts", command=self.show_shortcuts_help)
         help_menu.add_command(label="About", command=self.show_about)
         
-        # Add E-Stop button to the far right of the menu bar
+        # Add status indicator and E-Stop to the right side of the menu bar
+        
+        # Execution status (right-aligned)
+        self.status_var = tk.StringVar(value="STOPPED")
+        self.status_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Status: ", menu=self.status_menu, state='disabled')
+        
+        # Add a label to the menu bar for status display
+        self.status_label = tk.Label(
+            menubar,
+            textvariable=self.status_var,
+            font=("Arial", 10, "bold"),
+            padx=10
+        )
+        self.status_label.pack(side=tk.RIGHT)
+        
+        # E-Stop button (far right)
         menubar.add_command(
             label="🚨 E-STOP", 
             command=self.emergency_stop, 
@@ -174,29 +190,25 @@ class MainWindow:
         left_frame = ttk.Frame(main_paned)
         main_paned.add(left_frame, weight=3)
         
-        # Right panel (controls and status)
+        # Right panel (controls and macros)
         right_paned = ttk.PanedWindow(main_paned, orient=tk.VERTICAL)
-        main_paned.add(right_paned, weight=2)
+        main_paned.add(right_paned, weight=3)  # Increased weight to give more space to the right panel
         
         # Setup left panel (code editor)
         self.code_editor = CodeEditor(left_frame)
         self.code_editor.pack(fill=tk.BOTH, expand=True)
         
-        # Setup right panel top (status and controls)
+        # Setup right panel top (controls only - status is in menu bar)
         top_right_frame = ttk.Frame(right_paned)
-        right_paned.add(top_right_frame, weight=1)
-        
-        # Status panel
-        self.status_panel = StatusPanel(top_right_frame)
-        self.status_panel.pack(fill=tk.X, pady=(0, 5))
-        
-        # Control panel
+        right_paned.add(top_right_frame, weight=0)  # Minimal space for controls
+               
+        # Control panel (breakpoints only)
         self.control_panel = ControlPanel(top_right_frame)
         self.control_panel.pack(fill=tk.X, pady=(0, 5))
         
-        # Setup right panel middle (macros)
+        # Setup right panel middle (macros) - now with more space
         macro_frame = ttk.Frame(right_paned)
-        right_paned.add(macro_frame, weight=1)
+        right_paned.add(macro_frame, weight=2)  # Increased weight to give more space to macros
         
         self.macro_panel = MacroPanel(macro_frame, self.macro_manager, self.local_macro_manager)
         self.macro_panel.pack(fill=tk.BOTH, expand=True)
@@ -509,7 +521,22 @@ class MainWindow:
         def update():
             if self.control_panel:
                 self.control_panel.update_debug_state(debug_state)
+            
+            # Update status display in menu bar
+            state_info = {
+                DebugState.STOPPED: ("STOPPED", "black"),
+                DebugState.RUNNING: ("RUNNING", "green"),
+                DebugState.PAUSED: ("PAUSED", "orange"),
+                DebugState.STEPPING: ("STEPPING", "blue")
+            }
+            
+            status_text, color = state_info.get(debug_state, ("UNKNOWN", "gray"))
+            if hasattr(self, 'status_var') and hasattr(self, 'status_label'):
+                self.status_var.set(status_text)
+                self.status_label.config(foreground=color)
+            
             self._log_message(f"Debug state: {debug_state.value}")
+        
         self._thread_safe_callback(update)
     
     def _on_debugger_error(self, error):

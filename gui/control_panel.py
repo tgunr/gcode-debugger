@@ -50,18 +50,7 @@ class ControlPanel(ttk.LabelFrame):
         )
         self.clear_bp_btn.pack(side=tk.LEFT)
         
-        # Execution status
-        status_frame = ttk.LabelFrame(container, text="Execution Status")
-        status_frame.pack(fill=tk.X, pady=(0, 5))
-        
-        # Status label with larger font for better visibility
-        self.status_label = ttk.Label(
-            status_frame, 
-            text="STOPPED",
-            font=("Arial", 12, "bold"),
-            anchor=tk.CENTER
-        )
-        self.status_label.pack(pady=10, padx=5, fill=tk.X)
+        # Status display has been moved to the top menu bar for better visibility
         
         # E-Stop has been moved to the top menu bar for better accessibility
         
@@ -88,19 +77,12 @@ class ControlPanel(ttk.LabelFrame):
         self._update_status_display()
     
     def _update_status_display(self):
-        """Update the status display with current debug state and visual feedback."""
-        state_info = {
-            DebugState.STOPPED: ("STOPPED", "black"),
-            DebugState.RUNNING: ("RUNNING", "green"),
-            DebugState.PAUSED: ("PAUSED", "orange"),
-            DebugState.STEPPING: ("STEPPING", "blue")
-        }
+        """Update the status display with current debug state.
         
-        status_text, color = state_info.get(self.debug_state, ("UNKNOWN", "gray"))
-        self.status_label.config(
-            text=status_text,
-            foreground=color
-        )
+        Note: The actual status display is now handled in the main window's menu bar.
+        This method is kept for compatibility but doesn't need to do anything.
+        """
+        pass
     
     def _on_continue(self):
         """Handle continue button click."""
