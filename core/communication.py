@@ -12,6 +12,7 @@ import json
 import time
 import threading
 from typing import Callable, Optional, Dict, Any
+from .msg_debug_handler import MsgDebugHandler
 
 class BBCtrlCommunicator:
     def __init__(self, host='bbctrl.local', port=80, callback_scheduler=None):
@@ -36,6 +37,9 @@ class BBCtrlCommunicator:
         # State tracking
         self.last_state = {}
         self.message_counter = 1
+        
+        # MSG/DEBUG handler for local processing
+        self.msg_debug_handler = MsgDebugHandler(self._handle_msg_debug_output)
 
     """Handles WebSocket and HTTP communication with Buildbotics controller."""
     # (Removed duplicate __init__ method)
@@ -55,6 +59,11 @@ class BBCtrlCommunicator:
                 self._callback_scheduler(callback, *args)
             else:
                 callback(*args)
+    
+    def _handle_msg_debug_output(self, msg_type: str, content: str):
+        """Handle MSG/DEBUG output from local processing."""
+        formatted_message = f"[{msg_type}] {content}"
+        self._call_callback(self.message_callback, formatted_message)
     
     def connect_websocket(self) -> bool:
         """Connect to the WebSocket for real-time communication."""
@@ -86,15 +95,30 @@ class BBCtrlCommunicator:
         self._call_callback(self.message_callback, "WebSocket connected")
     
     def _on_message(self, ws, message):
-        """Handle incoming WebSocket messages (original simple format)."""
+        """Handle incoming WebSocket messages (enhanced for MSG/DEBUG output)."""
+        # Log ALL incoming messages for debugging
+        self._call_callback(self.message_callback, f"RAW WS MESSAGE: {message}")
+        
         try:
             data = json.loads(message)
+            
+            # Check for MSG/DEBUG command responses
+            if 'result' in data or 'response' in data:
+                self._call_callback(self.message_callback, f"COMMAND RESPONSE: {data}")
+            
+            # Check for error responses
+            if 'error' in data:
+                self._call_callback(self.error_callback, f"COMMAND ERROR: {data}")
+            
             # Update state if received
             if 'state' in data or any(key in data for key in ['xx', 'cycle', 'line']):
                 self.last_state.update(data)
                 self._call_callback(self.state_callback, self.last_state)
+                
         except json.JSONDecodeError:
-            pass
+            # Handle non-JSON messages (might be plain text responses)
+            if message.strip():  # Only log non-empty messages
+                self._call_callback(self.message_callback, f"NON-JSON MESSAGE: {message}")
         except Exception as e:
             self._call_callback(self.error_callback, f"Message processing error: {e}")
     
@@ -119,31 +143,19 @@ class BBCtrlCommunicator:
             self._call_callback(self.error_callback, f"Error getting state: {e}")
         return None
     
-    def send_gcode(self, command: str, use_json_rpc: bool = False) -> bool:
-        """Send G-code command via WebSocket.
-        
-        Args:
-            command: The G-code command to send
-            use_json_rpc: If True, use JSON-RPC format (for MDI), otherwise send raw command (for file execution)
-        """
+    def send_gcode(self, command: str) -> bool:
+        """Send G-code command via WebSocket."""
         if not self.connected:
             self._call_callback(self.error_callback, "Not connected to WebSocket")
             return False
+        
+        # Process MSG/DEBUG commands locally before sending
+        self.msg_debug_handler.process_command(command)
+        
         try:
-            if use_json_rpc:
-                # Use JSON-RPC format for MDI commands
-                message = {
-                    'id': int(time.time() * 1000),  # Use timestamp as ID
-                    'jsonrpc': '2.0',
-                    'method': 'gcode',
-                    'params': {'gcode': command}
-                }
-                message_str = json.dumps(message)
-                self.ws.send(message_str)
-            else:
-                # Send raw G-code for file execution (debugger) - add line terminator
-                self.ws.send(command + '\n')
-            
+            # Add newline terminator to the command as G-code typically requires line termination
+            command_with_terminator = command.rstrip() + '\n'
+            self.ws.send(command_with_terminator)
             self._call_callback(self.message_callback, f"Sent: {command}")
             return True
         except Exception as e:
@@ -151,9 +163,9 @@ class BBCtrlCommunicator:
             return False
     
     def send_mdi_command(self, command: str) -> bool:
-        """Send MDI command using EXACTLY the same method as debugger."""
-        # Use the exact same method as the working debugger
-        return self.send_gcode(command, use_json_rpc=False)
+        """Send MDI command using the same simple method as send_gcode_direct.py."""
+        # Use the exact same simple method that works in send_gcode_direct.py
+        return self.send_gcode(command)
     
     def emergency_stop(self) -> bool:
         """Send emergency stop command."""

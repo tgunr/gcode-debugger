@@ -486,6 +486,12 @@ class QuickCommandEntry(ttk.Frame):
         """Get reference to main window."""
         parent = self.master
         while parent:
+            # Check if this is the root window (Tk instance) and has main_window reference
+            if isinstance(parent, tk.Tk) and hasattr(parent, 'main_window'):
+                main_window = parent.main_window
+                if hasattr(main_window, 'send_gcode_command'):
+                    return main_window
+                    
             if hasattr(parent, 'communicator'):
                 return parent
             parent = parent.master

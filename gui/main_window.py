@@ -34,6 +34,9 @@ class MainWindow:
         self.root.geometry("1400x900")
         print("MainWindow: after root.geometry")
         
+        # Store reference to this MainWindow instance in the root for widget access
+        self.root.main_window = self
+        
         # Initialize core components
         self.communicator = BBCtrlCommunicator(callback_scheduler=self._thread_safe_callback)
         self.debugger = GCodeDebugger(self.communicator)
@@ -414,11 +417,10 @@ class MainWindow:
                 self._log_message("Failed to connect for MDI command", "red")
                 return False
         
-        if not self.communicator.is_ready_for_command():
-            self._log_message("Machine not ready for commands", "red")
-            return False
-            
-        if self.communicator.send_mdi_command(command):
+        # Send command
+        result = self.communicator.send_mdi_command(command)
+        
+        if result:
             self._log_message(f"MDI: {command}")
             return True
         else:
@@ -433,9 +435,23 @@ class MainWindow:
                 self.status_panel.update_state(state)
         self._thread_safe_callback(update)
     
-    def _on_communication_message(self, message):
+    def _on_communication_message(self, message, color="green"):
         """Handle communication messages."""
-        self._thread_safe_callback(self._log_message, f"COMM: {message}")
+        # Enhanced handling for different message types
+        if "RAW WS MESSAGE:" in message:
+            self._thread_safe_callback(self._log_message, message, "cyan")
+        elif "COMMAND RESPONSE:" in message:
+            self._thread_safe_callback(self._log_message, message, "yellow")
+        elif "NON-JSON MESSAGE:" in message:
+            self._thread_safe_callback(self._log_message, message, "white")
+        elif message.startswith("[MSG]"):
+            # MSG command output - display prominently
+            self._thread_safe_callback(self._log_message, message, "yellow")
+        elif message.startswith("[DEBUG]"):
+            # DEBUG command output - display prominently
+            self._thread_safe_callback(self._log_message, message, "magenta")
+        else:
+            self._thread_safe_callback(self._log_message, f"COMM: {message}", color)
     
     def _on_communication_error(self, error):
         """Handle communication errors."""
@@ -489,10 +505,28 @@ class MainWindow:
     
     # Utility methods
     def _log_message(self, message, color="green"):
-        """Log a message to the console."""
+        """Log a message to the console with color support."""
         if self.console:
             self.console.configure(state=tk.NORMAL)
+            
+            # Configure color tags if not already done
+            if not hasattr(self, '_color_tags_configured'):
+                self.console.tag_configure("green", foreground="green")
+                self.console.tag_configure("red", foreground="red")
+                self.console.tag_configure("yellow", foreground="yellow")
+                self.console.tag_configure("cyan", foreground="cyan")
+                self.console.tag_configure("white", foreground="white")
+                self.console.tag_configure("magenta", foreground="magenta")
+                self._color_tags_configured = True
+            
+            # Insert message with color
+            start_pos = self.console.index(tk.END)
             self.console.insert(tk.END, f"> {message}\n")
+            end_pos = self.console.index(tk.END)
+            
+            # Apply color tag to the inserted text
+            self.console.tag_add(color, start_pos, end_pos)
+            
             self.console.configure(state=tk.DISABLED)
             self.console.see(tk.END)
     
