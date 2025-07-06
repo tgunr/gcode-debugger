@@ -407,9 +407,9 @@ class MacroPanel(ttk.LabelFrame):
                 category=category
             ):
                 self._refresh_local_macro_list()
-                messagebox.showinfo("Success", f"Local macro '{name}' updated successfully!")
+                # No success message - just update the list silently
             else:
-                messagebox.showerror("Error", f"Failed to update local macro '{name}'.")
+                messagebox.showerror("Error", f"Failed to update local macro '{name}'")
     
     def _on_delete_local_macro(self):
         """Delete the selected local macro."""
@@ -472,29 +472,56 @@ class MacroPanel(ttk.LabelFrame):
                 messagebox.showinfo("Success", f"Local macro exported to '{file_path}'!")
             else:
                 messagebox.showerror("Error", f"Failed to export local macro.")
-    
     def _on_view_local_macro_in_editor(self, event=None):
         """View the selected local macro in the code editor."""
         if not self.selected_local_macro:
             return
-        
-        # Get main window and load macro into editor
+            
+        # Get the main window
         main_window = self._get_main_window()
-        if main_window and hasattr(main_window, 'code_editor'):
-            # Create a temporary G-code content for the macro
+        if not main_window or not hasattr(main_window, 'code_editor'):
+            messagebox.showerror("Error", "Could not access the code editor.")
+            return
+            
+        try:
+            # Check for unsaved changes in the editor
+            if hasattr(main_window, 'is_editor_dirty') and main_window.is_editor_dirty():
+                if not messagebox.askyesno(
+                    "Unsaved Changes",
+                    "You have unsaved changes in the editor. Load macro anyway?"
+                ):
+                    return  # User chose not to discard changes
+            
+            # Create a header for the macro
             macro_content = f"; Local Macro: {self.selected_local_macro.name}\n"
-            macro_content += f"; Description: {self.selected_local_macro.description}\n"
-            macro_content += f"; Category: {self.selected_local_macro.category}\n"
-            macro_content += f"; Type: Local (executed by debugger)\n"
+            if self.selected_local_macro.description:
+                macro_content += f"; Description: {self.selected_local_macro.description}\n"
+            if self.selected_local_macro.category:
+                macro_content += f"; Category: {self.selected_local_macro.category}\n"
             macro_content += ";\n"
             
-            for command in self.selected_local_macro.commands:
-                macro_content += f"{command}\n"
+            # Add the macro commands
+            macro_content += '\n'.join(self.selected_local_macro.commands)
             
-            # Load into code editor
-            main_window.code_editor.load_text_content(macro_content, f"Local Macro: {self.selected_local_macro.name}")
+            # Load the content into the editor
+            main_window.code_editor.delete('1.0', tk.END)
+            main_window.code_editor.insert('1.0', macro_content)
+            
+            # Update window title and status
             main_window.current_file_path = f"[Local Macro] {self.selected_local_macro.name}"
-            main_window.file_status.set(f"Viewing: {self.selected_local_macro.name} (Local Macro)")
+            if hasattr(main_window, 'file_status'):
+                main_window.file_status.set(f"Viewing: {self.selected_local_macro.name} (Local Macro)")
+            
+            # Mark as clean since we just loaded this content
+            if hasattr(main_window, 'mark_editor_clean'):
+                main_window.mark_editor_clean()
+            
+            # Log the action
+            if hasattr(main_window, '_log_message'):
+                main_window._log_message(f"Loaded local macro '{self.selected_local_macro.name}' into editor")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load macro into editor: {e}")
     
     # External macro execution and management methods
     def _on_execute_external_macro(self, event=None):
@@ -611,24 +638,53 @@ class MacroPanel(ttk.LabelFrame):
         """View the selected external macro in the code editor."""
         if not self.selected_macro:
             return
-        
-        # Get main window and load macro into editor
+            
+        # Get the main window
         main_window = self._get_main_window()
-        if main_window and hasattr(main_window, 'code_editor'):
-            # Create a temporary G-code content for the macro
+        if not main_window or not hasattr(main_window, 'code_editor'):
+            messagebox.showerror("Error", "Could not access the code editor.")
+            return
+            
+        try:
+            # Check for unsaved changes in the editor
+            if hasattr(main_window, 'is_editor_dirty') and main_window.is_editor_dirty():
+                if not messagebox.askyesno(
+                    "Unsaved Changes",
+                    "You have unsaved changes in the editor. Load macro anyway?"
+                ):
+                    return  # User chose not to discard changes
+            
+            # Create a header for the macro
             macro_content = f"; External Macro: {self.selected_macro.name}\n"
-            macro_content += f"; Description: {self.selected_macro.description}\n"
-            macro_content += f"; Category: {self.selected_macro.category}\n"
-            macro_content += f"; Type: External (executed by controller)\n"
+            if self.selected_macro.description:
+                macro_content += f"; Description: {self.selected_macro.description}\n"
+            if self.selected_macro.category:
+                macro_content += f"; Category: {self.selected_macro.category}\n"
+            macro_content += "; Type: External (executed by controller)\n"
             macro_content += ";\n"
             
-            for command in self.selected_macro.commands:
-                macro_content += f"{command}\n"
+            # Add the macro commands
+            macro_content += '\n'.join(self.selected_macro.commands)
             
-            # Load into code editor
-            main_window.code_editor.load_text_content(macro_content, f"External Macro: {self.selected_macro.name}")
+            # Load the content into the editor
+            main_window.code_editor.delete('1.0', tk.END)
+            main_window.code_editor.insert('1.0', macro_content)
+            
+            # Update window title and status
             main_window.current_file_path = f"[External Macro] {self.selected_macro.name}"
-            main_window.file_status.set(f"Viewing: {self.selected_macro.name} (External Macro)")
+            if hasattr(main_window, 'file_status'):
+                main_window.file_status.set(f"Viewing: {self.selected_macro.name} (External Macro)")
+            
+            # Mark as clean since we just loaded this content
+            if hasattr(main_window, 'mark_editor_clean'):
+                main_window.mark_editor_clean()
+            
+            # Log the action
+            if hasattr(main_window, '_log_message'):
+                main_window._log_message(f"Loaded external macro '{self.selected_macro.name}' into editor")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load macro into editor: {e}")
     
     def _get_main_window(self):
         """Get reference to main window."""

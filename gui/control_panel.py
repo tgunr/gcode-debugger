@@ -94,8 +94,20 @@ class ControlPanel(ttk.LabelFrame):
         # Update status display based on debug state
         self._update_status_display()
     
+    def update_position_display(self, x, y, z):
+        """Update the position display with new coordinates.
+        
+        Args:
+            x: X coordinate
+            y: Y coordinate
+            z: Z coordinate
+        """
+        if hasattr(self, 'position_label'):
+            position_text = f"Position: X{x:.3f} Y{y:.3f} Z{z:.3f}"
+            self.position_label.config(text=position_text)
+    
     def _update_status_display(self):
-        """Update the status display with current debug state and position."""
+        """Update the status display with current debug state."""
         # Update status text
         status_text = {
             DebugState.STOPPED: "Status: STOPPED",
@@ -120,17 +132,6 @@ class ControlPanel(ttk.LabelFrame):
                 text=current_status,
                 foreground=current_color
             )
-        
-        # Get position from main window if available
-        main_window = self._get_main_window()
-        if hasattr(main_window, 'get_current_position'):
-            try:
-                x, y, z = main_window.get_current_position()
-                position_text = f"Position: X{x:.3f} Y{y:.3f} Z{z:.3f}"
-                if hasattr(self, 'position_label'):
-                    self.position_label.config(text=position_text)
-            except Exception:
-                pass
     
     def _on_continue(self):
         """Handle continue button click."""

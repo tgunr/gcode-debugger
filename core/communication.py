@@ -67,6 +67,7 @@ class BBCtrlCommunicator:
     
     def connect_websocket(self) -> bool:
         """Connect to the WebSocket for real-time communication."""
+        print(f"Attempting to connect to WebSocket at {self.ws_url}")
         try:
             self.ws = websocket.WebSocketApp(
                 self.ws_url,
@@ -75,19 +76,41 @@ class BBCtrlCommunicator:
                 on_error=self._on_error,
                 on_close=self._on_close
             )
+            print("WebSocketApp created, starting thread...")
             # Start WebSocket in a separate thread
-            self.ws_thread = threading.Thread(target=self.ws.run_forever)
+            self.ws_thread = threading.Thread(target=self._run_websocket)
             self.ws_thread.daemon = True
             self.ws_thread.start()
+            print("WebSocket thread started, waiting for connection...")
             # Wait for connection with timeout
             timeout = 10
             while not self.connected and timeout > 0:
-                time.sleep(0.1)
-                timeout -= 0.1
+                print(f"Waiting for connection... {timeout:.1f}s remaining")
+                time.sleep(0.5)
+                timeout -= 0.5
+            
+            if self.connected:
+                print("WebSocket connection established successfully")
+            else:
+                print("WebSocket connection timed out")
+                
             return self.connected
         except Exception as e:
-            self._call_callback(self.error_callback, f"WebSocket connection error: {e}")
+            error_msg = f"WebSocket connection error: {e}"
+            print(error_msg)
+            self._call_callback(self.error_callback, error_msg)
             return False
+    
+    def _run_websocket(self):
+        """Run the WebSocket client with error handling."""
+        try:
+            print("Starting WebSocket run_forever...")
+            self.ws.run_forever()
+            print("WebSocket run_forever exited")
+        except Exception as e:
+            error_msg = f"Error in WebSocket thread: {e}"
+            print(error_msg)
+            self._call_callback(self.error_callback, error_msg)
     
     def _on_open(self, ws):
         """WebSocket connection opened."""
@@ -95,9 +118,38 @@ class BBCtrlCommunicator:
         self._call_callback(self.message_callback, "WebSocket connected")
     
     def _on_message(self, ws, message):
-        """Handle incoming WebSocket messages (enhanced for MSG/DEBUG output)."""
-        # Log ALL incoming messages for debugging
-        self._call_callback(self.message_callback, f"RAW WS MESSAGE: {message}")
+        """Handle incoming WebSocket messages and state updates."""
+        try:
+            data = json.loads(message)
+            
+            # Log the raw message for debugging
+            self._call_callback(self.message_callback, f"WS MESSAGE: {message}")
+            
+            # Update last state with the new data
+            self._update_state(data)
+            
+        except json.JSONDecodeError as e:
+            self._call_callback(self.error_callback, f"Failed to decode WebSocket message: {e}")
+    
+    def _update_state(self, data):
+        """Update the internal state with new data from the controller."""
+        if not isinstance(data, dict):
+            return
+            
+        # Update last_state with the new data
+        self._merge_state(self.last_state, data)
+        
+        # Notify state change
+        self._call_callback(self.state_callback, self.last_state)
+    
+    def _merge_state(self, original, updates):
+        """Recursively merge update data into the original state."""
+        for key, value in updates.items():
+            if (key in original and isinstance(original[key], dict) and 
+                    isinstance(value, dict)):
+                self._merge_state(original[key], value)
+            else:
+                original[key] = value
         
         try:
             data = json.loads(message)

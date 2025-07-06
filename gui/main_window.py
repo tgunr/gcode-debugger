@@ -204,18 +204,18 @@ class MainWindow:
                
         # Control panel (breakpoints only)
         self.control_panel = ControlPanel(top_right_frame)
-        self.control_panel.pack(fill=tk.X, pady=(0, 5))
+        self.control_panel.pack(fill=tk.X, pady=(0, 2))  # Reduced padding
         
         # Setup right panel middle (macros) - now with more space
         macro_frame = ttk.Frame(right_paned)
-        right_paned.add(macro_frame, weight=2)  # Increased weight to give more space to macros
+        right_paned.add(macro_frame, weight=4)  # Increased weight to give more space to macros
         
         self.macro_panel = MacroPanel(macro_frame, self.macro_manager, self.local_macro_manager)
         self.macro_panel.pack(fill=tk.BOTH, expand=True)
         
         # Setup right panel bottom (MDI + console)
         console_container = ttk.Frame(right_paned)
-        right_paned.add(console_container, weight=1)
+        right_paned.add(console_container, weight=1)  # Keep console at minimum height
         
         # MDI panel (Manual Data Input) - now directly above console
         mdi_frame = ttk.LabelFrame(console_container, text="Manual Data Input (MDI)")
@@ -418,74 +418,118 @@ class MainWindow:
         if self.debugger.emergency_stop():
             self._log_message("EMERGENCY STOP ACTIVATED!")
             messagebox.showwarning("Emergency Stop", "Emergency stop has been activated!")
-    
+
     # Connection operations
+    def _attempt_connection(self):
+        """Attempt to connect to the controller on startup."""
+        try:
+            if self.communicator.connect_websocket():
+                self.connection_status.set("Connected")
+                self._log_message("Successfully connected to controller")
+                
+                # Request initial state
+                state = self.communicator.get_state()
+                if state:
+                    self._on_machine_state_changed(state)
+                
+                # Start position updates
+                self._start_position_updates()
+            else:
+                self.connection_status.set("Connection failed")
+                self._log_message("Failed to connect to controller", "red")
+        except Exception as e:
+            self.connection_status.set("Connection error")
+            self._log_message(f"Connection error: {e}", "red")
+
+    def _start_position_updates(self):
+        """Start periodic position updates."""
+        # Initial update
+        self._update_position_display()
+        # Schedule periodic updates (every 100ms)
+        self.root.after(100, self._periodic_position_update)
+
+    def _periodic_position_update(self):
+        """Periodically update the position display."""
+        if self.communicator.connected:
+            self._update_position_display()
+        # Schedule next update
+        self.root.after(100, self._periodic_position_update)
+
+    def _update_position_display(self):
+        """Update the position display if control panel exists."""
+        if hasattr(self, 'control_panel') and self.control_panel:
+            state = self.communicator.last_state
+            self.control_panel.update_position_display(
+                state.get('xp', 0),  # Using xp, yp, zp as per API spec
+                state.get('yp', 0),
+                state.get('zp', 0)
+            )
+
+    def get_current_position(self):
+        """Get the current machine position from the communicator.
+        
+        Returns:
+            tuple: (x, y, z) coordinates from the controller
+        """
+        state = self.communicator.last_state
+        return (
+            state.get('xp', 0),  # Using xp, yp, zp as per API spec
+            state.get('yp', 0),
+            state.get('zp', 0)
+        )
+    
     def connect_to_controller(self):
         """Connect to the controller."""
-        if self.communicator.connect_websocket():
-            self.connection_status.set("Connected")
-            self._log_message("Connected to controller")
-        else:
-            self.connection_status.set("Disconnected")
-            messagebox.showerror("Connection Error", "Failed to connect to controller")
+        try:
+            if self.communicator.connect_websocket():
+                self.connection_status.set("Connected")
+                self._log_message("Connected to controller")
+                self._start_position_updates()
+                return True
+            else:
+                self.connection_status.set("Connection failed")
+                self._log_message("Failed to connect to controller", "red")
+                return False
+        except Exception as e:
+            self.connection_status.set("Connection error")
+            self._log_message(f"Connection error: {e}", "red")
+            return False
     
     def disconnect_from_controller(self):
         """Disconnect from the controller."""
-        self.communicator.close()
-        self.connection_status.set("Disconnected")
-        self._log_message("Disconnected from controller")
+        try:
+            self.communicator.close()
+            self.connection_status.set("Disconnected")
+            self._log_message("Disconnected from controller")
+            return True
+        except Exception as e:
+            self._log_message(f"Error disconnecting: {e}", "red")
+            return False
     
     def test_connection(self):
         """Test the controller connection."""
-        state = self.communicator.get_state()
-        if state:
-            messagebox.showinfo("Connection Test", "Connection successful!")
-            self._log_message("Connection test successful")
-        else:
-            messagebox.showerror("Connection Test", "Connection failed!")
-    
-    def send_gcode_command(self, command):
-        """Send a G-code command to the controller via MDI."""
-        # Ensure connection for MDI command (reconnect if needed)
-        if not self.communicator.connected:
-            self._log_message("Reconnecting for MDI command...")
-            if not self.communicator.connect_websocket():
-                self._log_message("Failed to connect for MDI command", "red")
-                return False
-        
-        # Send command
-        result = self.communicator.send_mdi_command(command)
-        
-        if result:
-            self._log_message(f"MDI: {command}")
-            return True
-        else:
-            self._log_message(f"Failed to send MDI command: {command}", "red")
-            return False
-    
-    def execute_local_macro(self, macro_name):
-        """Execute a local macro by name."""
         try:
-            local_macro = self.local_macro_manager.get_local_macro(macro_name)
-            if local_macro:
-                self._log_message(f"Executing local macro: {macro_name}")
-                self.local_macro_executor.execute_local_macro(local_macro)
+            state = self.communicator.get_state()
+            if state:
+                self._log_message("Connection test successful")
                 return True
             else:
-                self._log_message(f"Local macro not found: {macro_name}", "red")
+                messagebox.showerror("Connection Test", "Connection failed!")
                 return False
         except Exception as e:
-            self._log_message(f"Failed to execute local macro '{macro_name}': {e}", "red")
+            messagebox.showerror("Connection Test", f"Error: {e}")
             return False
-    
+
     # Callback handlers
     def _on_machine_state_changed(self, state):
         """Handle machine state changes."""
         def update():
-            if self.status_panel:
-                self.status_panel.update_state(state)
+            state_str = state.get('xx', 'Unknown')  # 'xx' is the state key in the API
+            self._log_message(f"Machine state: {state_str}", "blue")
+            # Update position display when state changes
+            self._update_position_display()
         self._thread_safe_callback(update)
-    
+
     def _on_communication_message(self, message, color="green"):
         """Handle communication messages."""
         # Enhanced handling for different message types
@@ -566,8 +610,32 @@ class MainWindow:
         self._thread_safe_callback(self._log_message, f"Macro '{macro_name}' completed")
     
     def _on_macro_error(self, error):
-        """Handle macro execution errors."""
-        self._thread_safe_callback(self._log_message, f"MACRO ERROR: {error}", "red")
+        """Handle local macro execution errors."""
+        self._log_message(f"Macro error: {error}", color="red")
+        self._update_progress_display()
+        
+    def send_gcode_command(self, command: str) -> bool:
+        """Send a G-code command to the controller via MDI.
+        
+        Args:
+            command: The G-code command to send
+            
+        Returns:
+            bool: True if command was sent successfully, False otherwise
+        """
+        if not command or not command.strip():
+            return False
+            
+        try:
+            # Send the command using the communicator's MDI interface
+            self._log_message(f"Sending MDI command: {command}", color="blue")
+            success = self.communicator.send_mdi_command(command)
+            if not success:
+                self._log_message(f"Failed to send command: {command}", color="red")
+            return success
+        except Exception as e:
+            self._log_message(f"Error sending command: {e}", color="red")
+            return False
     
     def _on_local_macro_progress(self, progress, command):
         """Handle local macro execution progress."""
