@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "created_date": "2025-07-05T15:57:23.461774",
+  "created_date": "2025-07-16T15:36:24.635055",
   "local_macros": {
     "Debug Home XY": {
       "name": "Debug Home XY",
@@ -34,7 +34,7 @@
         "G92 X0 Y0 Z0"
       ],
       "created_date": "2025-07-05T12:42:28.222974",
-      "modified_date": "2025-07-05T12:42:28.222974",
+      "modified_date": "2025-07-16T14:03:15.134390",
       "category": "debug",
       "is_local": true
     },
@@ -84,10 +84,11 @@
       "commands": [
         "G91",
         "G0 Z1",
-        "G90"
+        "G90",
+        "M5"
       ],
       "created_date": "2025-07-05T13:35:18.510400",
-      "modified_date": "2025-07-05T15:57:23.461714",
+      "modified_date": "2025-07-16T15:36:24.634995",
       "category": "user",
       "is_local": true
     }

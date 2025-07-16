@@ -151,6 +151,27 @@ class MainWindow:
             compound=tk.RIGHT
         )
     
+    def save_current_file(self):
+        """Save the current file or macro."""
+        if not hasattr(self, 'macro_panel') or not hasattr(self, 'code_editor'):
+            return
+            
+        # Check if we're currently viewing a macro
+        current_tab = self.macro_panel.notebook.tab(self.macro_panel.notebook.select(), "text").lower()
+        if 'local' in current_tab or 'external' in current_tab:
+            # Save macro
+            if hasattr(self.macro_panel, '_save_current_macro'):
+                if self.macro_panel._save_current_macro(self):
+                    self._log_message("Macro saved successfully")
+                    # Clear the modified flag after successful save
+                    if hasattr(self.code_editor, 'clear_modified_flag'):
+                        self.code_editor.clear_modified_flag()
+                else:
+                    self._log_message("Failed to save macro", color="red")
+        else:
+            # TODO: Implement file save for non-macro files
+            self._log_message("Save not implemented for this file type", color="orange")
+    
     def _setup_toolbar(self):
         """Setup the toolbar."""
         toolbar = ttk.Frame(self.root)
@@ -158,6 +179,7 @@ class MainWindow:
         
         # File operations
         ttk.Button(toolbar, text="📁 Open", command=self.open_file).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="💾 Save", command=self.save_current_file).pack(side=tk.LEFT, padx=2)
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, padx=5, fill=tk.Y)
         
         # Debug controls
@@ -289,6 +311,7 @@ class MainWindow:
     def _setup_keyboard_shortcuts(self):
         """Setup keyboard shortcuts."""
         self.root.bind('<Control-o>', lambda e: self.open_file())
+        self.root.bind('<Control-s>', lambda e: self.save_current_file())
         self.root.bind('<F5>', lambda e: self.continue_execution())
         self.root.bind('<F9>', lambda e: self.toggle_breakpoint())
         self.root.bind('<F10>', lambda e: self.step_over())

@@ -26,6 +26,8 @@ class CodeEditor(ttk.Frame):
         self.breakpoints: Set[int] = set()
         self.current_line = 0
         self.context_window_size = 15
+        self._is_modified = False  # Track if content has been modified
+        self._original_content = ""  # Store original content for comparison
         
         # Colors and fonts
         self.colors = {
@@ -163,6 +165,19 @@ class CodeEditor(ttk.Frame):
         """Set callback for line edit events."""
         self.line_edit_callback = callback
     
+    def has_unsaved_changes(self) -> bool:
+        """Check if there are unsaved changes in the editor."""
+        if not self.parser:
+            return False
+        current_content = self.text_widget.get('1.0', tk.END)
+        return current_content != self._original_content
+    
+    def clear_modified_flag(self):
+        """Clear the modified flag and update the original content."""
+        self._is_modified = False
+        self._original_content = self.text_widget.get('1.0', tk.END)
+        self._mark_modified_lines()
+    
     def load_gcode(self, parser: GCodeParser):
         """Load G-code from parser into the editor."""
         self.parser = parser
@@ -170,9 +185,16 @@ class CodeEditor(ttk.Frame):
         # Clear existing content
         self.text_widget.delete('1.0', tk.END)
         
-        # Load lines
+        # Load lines and build original content
+        original_content = []
         for line in parser.lines:
-            self.text_widget.insert(tk.END, line.original + '\n')
+            line_content = line.original + '\n'
+            self.text_widget.insert(tk.END, line_content)
+            original_content.append(line_content)
+        
+        # Store original content for change tracking
+        self._original_content = ''.join(original_content)
+        self._is_modified = False
         
         # Update line numbers and syntax highlighting
         self._update_line_numbers()
@@ -252,13 +274,31 @@ class CodeEditor(ttk.Frame):
     
     def _mark_modified_lines(self):
         """Mark modified lines with special highlighting."""
+        # First, clear all modified line highlighting
+        self.text_widget.tag_remove('modified', '1.0', tk.END)
+        
+        # If we don't have a parser, we can't track modifications
         if not self.parser:
             return
+            
+        # Get current content for comparison
+        current_content = self.text_widget.get('1.0', tk.END).splitlines()
+        original_lines = self._original_content.splitlines()
         
-        for line in self.parser.lines:
-            if line.is_modified:
-                start_index = f"{line.line_number}.0"
-                end_index = f"{line.line_number}.end"
+        # Highlight modified lines
+        for i in range(min(len(current_content), len(original_lines))):
+            if i < len(original_lines) and (i >= len(current_content) or current_content[i] != original_lines[i]):
+                line_num = i + 1  # Line numbers are 1-based
+                start_index = f"{line_num}.0"
+                end_index = f"{line_num}.end"
+                self.text_widget.tag_add('modified', start_index, end_index)
+        
+        # Handle case where new lines were added at the end
+        if len(current_content) > len(original_lines):
+            for i in range(len(original_lines), len(current_content)):
+                line_num = i + 1
+                start_index = f"{line_num}.0"
+                end_index = f"{line_num}.end"
                 self.text_widget.tag_add('modified', start_index, end_index)
     
     def highlight_current_line(self, line_number: int):
@@ -393,8 +433,14 @@ class CodeEditor(ttk.Frame):
     
     def _on_text_changed(self, event):
         """Handle text changes."""
+        # Mark as modified
+        self._is_modified = True
+        
         # Reapply syntax highlighting after a short delay
         self.after_idle(self._apply_syntax_highlighting)
+        
+        # Update modified lines highlighting
+        self.after_idle(self._mark_modified_lines)
     
     def _on_click(self, event):
         """Handle mouse clicks."""

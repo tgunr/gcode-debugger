@@ -343,6 +343,162 @@ class MacroPanel(ttk.LabelFrame):
         
         self._update_external_button_states()
         
+    def _save_current_macro(self, main_window) -> bool:
+        """Save the current macro content back to the macro manager.
+        
+        Returns:
+            bool: True if save was successful, False otherwise.
+        """
+        print("DEBUG: Starting _save_current_macro")
+        
+        if not hasattr(main_window, 'code_editor'):
+            print("DEBUG: No code_editor in main_window")
+            return False
+            
+        if not hasattr(main_window, 'debugger'):
+            print("DEBUG: No debugger in main_window")
+            return False
+            
+        try:
+            # Get the current content from the editor
+            content = main_window.code_editor.text_widget.get('1.0', tk.END).strip()
+            print(f"DEBUG: Got editor content, length: {len(content)}")
+            
+            # Parse the content to extract the macro name and commands
+            lines = [line.strip() for line in content.split('\n') if line.strip()]
+            print(f"DEBUG: Parsed {len(lines)} non-empty lines")
+            
+            if not lines:
+                print("DEBUG: No content to save")
+                return False
+                
+            # The first line should contain the macro name
+            first_line = lines[0]
+            print(f"DEBUG: First line: {first_line}")
+            
+            if not first_line.startswith('; '):
+                print("DEBUG: First line doesn't start with '; ' (semicolon space)")
+                return False
+                
+            # Extract macro name from the first line
+            macro_name = first_line[2:].split(':', 1)[1].strip() if ':' in first_line else first_line[2:].strip()
+            print(f"DEBUG: Extracted macro name: '{macro_name}'")
+            
+            # Skip header lines (starting with ';') to get the actual commands
+            commands = [line for line in lines if not line.startswith(';')]
+            print(f"DEBUG: Found {len(commands)} command lines")
+            
+            # Get the current tab (local or external macros)
+            try:
+                current_tab = self.notebook.tab(self.notebook.select(), "text").lower()
+                print(f"DEBUG: Current tab text: '{current_tab}'")
+                
+                # Check if this is a local macro tab (handle emoji prefix)
+                is_local = 'local' in current_tab
+                print(f"DEBUG: Detected macro type: {'local' if is_local else 'external'}")
+                
+                if is_local:
+                    print("DEBUG: Processing local macro")
+                    if hasattr(main_window, 'local_macro_manager'):
+                        print("DEBUG: Found local_macro_manager, updating macro")
+                        # Try to get the macro first to ensure it exists
+                        existing_macro = main_window.local_macro_manager.get_local_macro(macro_name)
+                        if existing_macro is None:
+                            print(f"DEBUG: Local macro '{macro_name}' not found, creating new one")
+                            result = main_window.local_macro_manager.create_local_macro(
+                                name=macro_name,
+                                commands=commands,
+                                description=existing_macro.description if hasattr(existing_macro, 'description') else ""
+                            )
+                        else:
+                            print("DEBUG: Updating existing local macro")
+                            result = main_window.local_macro_manager.update_local_macro(
+                                name=macro_name,
+                                commands=commands,
+                                description=existing_macro.description if hasattr(existing_macro, 'description') else ""
+                            )
+                        print(f"DEBUG: Local macro update result: {result}")
+                        return result
+                    else:
+                        print("DEBUG: No local_macro_manager found in main_window")
+                else:  # External macros
+                    print("DEBUG: Processing external macro")
+                    if hasattr(main_window, 'macro_manager'):
+                        print("DEBUG: Found macro_manager, updating macro")
+                        # Try to get the macro first to ensure it exists
+                        existing_macro = main_window.macro_manager.get_macro(macro_name)
+                        if existing_macro is None:
+                            print(f"DEBUG: External macro '{macro_name}' not found, creating new one")
+                            result = main_window.macro_manager.create_macro(
+                                name=macro_name,
+                                commands=commands,
+                                description=existing_macro.description if hasattr(existing_macro, 'description') else ""
+                            )
+                        else:
+                            print("DEBUG: Updating existing external macro")
+                            result = main_window.macro_manager.update_macro(
+                                name=macro_name,
+                                commands=commands,
+                                description=existing_macro.description if hasattr(existing_macro, 'description') else ""
+                            )
+                        print(f"DEBUG: External macro update result: {result}")
+                        return result
+                    else:
+                        print("DEBUG: No macro_manager found in main_window")
+                        
+            except Exception as e:
+                print(f"DEBUG: Error in tab detection or macro update: {e}")
+                import traceback
+                traceback.print_exc()
+                return False
+                    
+            print("DEBUG: No appropriate macro manager found")
+            return False
+            
+        except Exception as e:
+            print(f"ERROR in _save_current_macro: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def _prompt_save_changes(self, main_window) -> bool:
+        """Prompt the user to save changes if there are any unsaved changes.
+        
+        Returns:
+            bool: True if the user wants to continue (saved or discarded changes),
+                  False if the user cancelled the operation.
+        """
+        if not hasattr(main_window, 'code_editor'):
+            return True
+            
+        try:
+            if hasattr(main_window.code_editor, 'has_unsaved_changes') and \
+               main_window.code_editor.has_unsaved_changes():
+                response = messagebox.askyesnocancel(
+                    "Unsaved Changes",
+                    "You have unsaved changes in the editor. Do you want to save them?\n"
+                    "Click 'Yes' to save, 'No' to discard changes, or 'Cancel' to stay.",
+                    icon='warning'
+                )
+                
+                if response is None:  # User clicked Cancel
+                    return False
+                    
+                if response:  # User clicked Yes
+                    if not self._save_current_macro(main_window):
+                        messagebox.showerror("Error", "Failed to save changes to macro.")
+                        return False
+                
+                # Clear the modified flag in either case (save or discard)
+                if hasattr(main_window.code_editor, 'clear_modified_flag'):
+                    main_window.code_editor.clear_modified_flag()
+                    
+            return True
+            
+        except Exception as e:
+            print(f"Error checking for unsaved changes: {e}")
+            return True  # Continue on error to avoid blocking
+    
     def _load_macro_into_editor(self, macro, is_local=True):
         """Load macro content into the debugger panel."""
         import tempfile
@@ -353,6 +509,10 @@ class MacroPanel(ttk.LabelFrame):
         if not main_window or not hasattr(main_window, 'debugger'):
             messagebox.showerror("Error", "Could not access the debugger components.")
             return
+            
+        # Check for unsaved changes
+        if not self._prompt_save_changes(main_window):
+            return  # User cancelled the operation
             
         try:
             # Create a header for the macro
@@ -391,6 +551,10 @@ class MacroPanel(ttk.LabelFrame):
                     # Update the code editor if available
                     if hasattr(main_window, 'code_editor') and hasattr(main_window.code_editor, 'load_gcode'):
                         main_window.code_editor.load_gcode(main_window.debugger.parser)
+                        
+                        # Clear the modified flag since we just loaded new content
+                        if hasattr(main_window.code_editor, 'clear_modified_flag'):
+                            main_window.code_editor.clear_modified_flag()
                 else:
                     raise Exception("Failed to load macro content")
                     
