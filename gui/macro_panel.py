@@ -90,14 +90,7 @@ class MacroPanel(ttk.LabelFrame):
         )
         self.local_new_btn.pack(side=tk.LEFT, padx=(0, 2))
         
-        self.local_edit_btn = ttk.Button(
-            local_main_frame,
-            text="✏️ Edit",
-            command=self._on_edit_local_macro,
-            width=8,
-            state=tk.DISABLED
-        )
-        self.local_edit_btn.pack(side=tk.LEFT, padx=(0, 2))
+        # Edit button removed - double-click macro to edit in debugger
         
         self.local_delete_btn = ttk.Button(
             local_main_frame,
@@ -195,14 +188,7 @@ class MacroPanel(ttk.LabelFrame):
         )
         self.external_new_btn.pack(side=tk.LEFT, padx=(0, 2))
         
-        self.external_edit_btn = ttk.Button(
-            external_main_frame,
-            text="✏️ Edit",
-            command=self._on_edit_external_macro,
-            width=8,
-            state=tk.DISABLED
-        )
-        self.external_edit_btn.pack(side=tk.LEFT, padx=(0, 2))
+        # Edit button removed - double-click macro to edit in debugger
         
         self.external_delete_btn = ttk.Button(
             external_main_frame,
@@ -315,13 +301,17 @@ class MacroPanel(ttk.LabelFrame):
     
     # Local macro event handlers
     def _on_local_macro_select(self, event):
-        """Handle local macro selection."""
+        """Handle local macro selection and load into editor."""
         selection = self.local_macro_listbox.curselection()
         if selection:
             macro_text = self.local_macro_listbox.get(selection[0])
             # Extract macro name (remove emoji and description)
             macro_name = macro_text.split(' - ')[0].split(' ', 1)[1]  # Remove emoji prefix
             self.selected_local_macro = self.local_macro_manager.get_local_macro(macro_name)
+            
+            # Load the macro into the editor
+            if self.selected_local_macro:
+                self._load_macro_into_editor(self.selected_local_macro, is_local=True)
         else:
             self.selected_local_macro = None
         
@@ -332,30 +322,97 @@ class MacroPanel(ttk.LabelFrame):
         has_selection = self.selected_local_macro is not None
         
         self.local_execute_btn.config(state=tk.NORMAL if has_selection else tk.DISABLED)
-        self.local_edit_btn.config(state=tk.NORMAL if has_selection else tk.DISABLED)
         self.local_delete_btn.config(state=tk.NORMAL if has_selection else tk.DISABLED)
         self.local_export_btn.config(state=tk.NORMAL if has_selection else tk.DISABLED)
     
     # External macro event handlers
     def _on_external_macro_select(self, event):
-        """Handle external macro selection."""
+        """Handle external macro selection and load into editor."""
         selection = self.external_macro_listbox.curselection()
         if selection:
             macro_text = self.external_macro_listbox.get(selection[0])
             # Extract macro name (remove emoji and description)
             macro_name = macro_text.split(' - ')[0].split(' ', 1)[1]  # Remove emoji prefix
             self.selected_macro = self.macro_manager.get_macro(macro_name)
+            
+            # Load the macro into the editor
+            if self.selected_macro:
+                self._load_macro_into_editor(self.selected_macro, is_local=False)
         else:
             self.selected_macro = None
         
         self._update_external_button_states()
+        
+    def _load_macro_into_editor(self, macro, is_local=True):
+        """Load macro content into the debugger panel."""
+        import tempfile
+        import os
+        
+        # Get the main window
+        main_window = self._get_main_window()
+        if not main_window or not hasattr(main_window, 'debugger'):
+            messagebox.showerror("Error", "Could not access the debugger components.")
+            return
+            
+        try:
+            # Create a header for the macro
+            macro_type = "Local" if is_local else "External"
+            macro_content = f"; {macro_type} Macro: {macro.name}\n"
+            
+            if hasattr(macro, 'description') and macro.description:
+                macro_content += f"; Description: {macro.description}\n"
+            if is_local and hasattr(macro, 'category') and macro.category:
+                macro_content += f"; Category: {macro.category}\n"
+            elif hasattr(macro, 'group') and macro.group:
+                macro_content += f"; Group: {macro.group}\n"
+                
+            macro_content += ";\n"
+            
+            # Add the macro commands
+            macro_content += '\n'.join(macro.commands)
+            
+            # Create a temporary file with the macro content
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.gcode', delete=False) as temp_file:
+                temp_file.write(macro_content)
+                temp_path = temp_file.name
+            
+            try:
+                # Load the temporary file using the debugger's load_file method
+                if main_window.debugger.load_file(temp_path):
+                    # Update window title and status
+                    main_window.current_file_path = f"[{macro_type} Macro] {macro.name}"
+                    if hasattr(main_window, 'file_status'):
+                        main_window.file_status.set(f"Viewing: {macro.name} ({macro_type} Macro)")
+                    
+                    # Log the action
+                    if hasattr(main_window, '_log_message'):
+                        main_window._log_message(f"Loaded {macro_type.lower()} macro '{macro.name}' into debugger")
+                    
+                    # Update the code editor if available
+                    if hasattr(main_window, 'code_editor') and hasattr(main_window.code_editor, 'load_gcode'):
+                        main_window.code_editor.load_gcode(main_window.debugger.parser)
+                else:
+                    raise Exception("Failed to load macro content")
+                    
+            finally:
+                # Clean up the temporary file
+                try:
+                    if os.path.exists(temp_path):
+                        os.unlink(temp_path)
+                except Exception as e:
+                    print(f"Warning: Failed to delete temporary file: {e}")
+            
+        except Exception as e:
+            error_msg = f"Failed to load macro into debugger: {e}"
+            messagebox.showerror("Error", error_msg)
+            if hasattr(main_window, '_log_message'):
+                main_window._log_message(f"Error loading macro: {str(e)}", color="red")
     
     def _update_external_button_states(self):
         """Update external macro button enabled/disabled states."""
         has_selection = self.selected_macro is not None
         
         self.external_execute_btn.config(state=tk.NORMAL if has_selection else tk.DISABLED)
-        self.external_edit_btn.config(state=tk.NORMAL if has_selection else tk.DISABLED)
         self.external_delete_btn.config(state=tk.NORMAL if has_selection else tk.DISABLED)
         self.external_export_btn.config(state=tk.NORMAL if has_selection else tk.DISABLED)
     
@@ -474,8 +531,14 @@ class MacroPanel(ttk.LabelFrame):
                 messagebox.showerror("Error", f"Failed to export local macro.")
     def _on_view_local_macro_in_editor(self, event=None):
         """View the selected local macro in the code editor."""
+        # If no macro is selected, try to get the current selection
         if not self.selected_local_macro:
-            return
+            selection = self.local_macro_listbox.curselection()
+            if not selection:
+                return
+            self._on_local_macro_select(event)  # Update the selection
+            if not self.selected_local_macro:  # Still no selection
+                return
             
         # Get the main window
         main_window = self._get_main_window()
@@ -504,8 +567,8 @@ class MacroPanel(ttk.LabelFrame):
             macro_content += '\n'.join(self.selected_local_macro.commands)
             
             # Load the content into the editor
-            main_window.code_editor.delete('1.0', tk.END)
-            main_window.code_editor.insert('1.0', macro_content)
+            main_window.code_editor.text_widget.delete('1.0', tk.END)
+            main_window.code_editor.text_widget.insert('1.0', macro_content)
             
             # Update window title and status
             main_window.current_file_path = f"[Local Macro] {self.selected_local_macro.name}"
@@ -519,6 +582,9 @@ class MacroPanel(ttk.LabelFrame):
             # Log the action
             if hasattr(main_window, '_log_message'):
                 main_window._log_message(f"Loaded local macro '{self.selected_local_macro.name}' into editor")
+            
+            # Apply syntax highlighting
+            main_window.code_editor.highlight_all()
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load macro into editor: {e}")
@@ -636,8 +702,14 @@ class MacroPanel(ttk.LabelFrame):
     
     def _on_view_external_macro_in_editor(self, event=None):
         """View the selected external macro in the code editor."""
+        # If no macro is selected, try to get the current selection
         if not self.selected_macro:
-            return
+            selection = self.external_macro_listbox.curselection()
+            if not selection:
+                return
+            self._on_external_macro_select(event)  # Update the selection
+            if not self.selected_macro:  # Still no selection
+                return
             
         # Get the main window
         main_window = self._get_main_window()
@@ -653,22 +725,21 @@ class MacroPanel(ttk.LabelFrame):
                     "You have unsaved changes in the editor. Load macro anyway?"
                 ):
                     return  # User chose not to discard changes
-            
+                    
             # Create a header for the macro
             macro_content = f"; External Macro: {self.selected_macro.name}\n"
             if self.selected_macro.description:
                 macro_content += f"; Description: {self.selected_macro.description}\n"
-            if self.selected_macro.category:
-                macro_content += f"; Category: {self.selected_macro.category}\n"
-            macro_content += "; Type: External (executed by controller)\n"
+            if hasattr(self.selected_macro, 'group') and self.selected_macro.group:
+                macro_content += f"; Group: {self.selected_macro.group}\n"
             macro_content += ";\n"
             
             # Add the macro commands
             macro_content += '\n'.join(self.selected_macro.commands)
             
             # Load the content into the editor
-            main_window.code_editor.delete('1.0', tk.END)
-            main_window.code_editor.insert('1.0', macro_content)
+            main_window.code_editor.text_widget.delete('1.0', tk.END)
+            main_window.code_editor.text_widget.insert('1.0', macro_content)
             
             # Update window title and status
             main_window.current_file_path = f"[External Macro] {self.selected_macro.name}"
@@ -683,16 +754,31 @@ class MacroPanel(ttk.LabelFrame):
             if hasattr(main_window, '_log_message'):
                 main_window._log_message(f"Loaded external macro '{self.selected_macro.name}' into editor")
             
+            # Apply syntax highlighting
+            main_window.code_editor.highlight_all()
+            
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load macro into editor: {e}")
-    
     def _get_main_window(self):
         """Get reference to main window."""
+        # Try to get the root window first
+        root = self.winfo_toplevel()
+        
+        # If we have a root and it has a main_window attribute, return that
+        if hasattr(root, 'main_window') and root.main_window is not None:
+            return root.main_window
+            
+        # Fallback: search up the widget hierarchy
         parent = self.master
         while parent:
-            if hasattr(parent, 'macro_executor') or hasattr(parent, 'local_macro_manager'):
+            # Check for any attribute that would identify the main window
+            if (hasattr(parent, 'code_editor') or 
+                hasattr(parent, 'debugger') or 
+                hasattr(parent, 'macro_manager')):
                 return parent
             parent = parent.master
+            
+        print("Warning: Could not find main window")
         return None
 
 class LocalMacroEditDialog:
