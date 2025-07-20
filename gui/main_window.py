@@ -73,7 +73,9 @@ class MainWindow:
         
         # State variables
         self.current_file_path = ""
-        self.connection_status = tk.StringVar(value="Disconnected")
+        self.connection_status = tk.StringVar()
+        # Initialize after widgets are created
+        # (default text+color will be set in _set_connection_status)
         
         # Setup GUI
         self._setup_menu()
@@ -321,9 +323,15 @@ class MainWindow:
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, padx=5, fill=tk.Y)
         
         # Connection status
+        # For side=tk.RIGHT, pack dynamic label first, then static text so final order is "Status: Connected"
+        self.status_label = ttk.Label(toolbar, textvariable=self.connection_status)
+        self.status_label.pack(side=tk.RIGHT, padx=2)
         ttk.Label(toolbar, text="Status:").pack(side=tk.RIGHT, padx=2)
-        status_label = ttk.Label(toolbar, textvariable=self.connection_status)
-        status_label.pack(side=tk.RIGHT, padx=2)
+
+        # Update label color whenever status changes
+        self.connection_status.trace_add("write", self._on_connection_status_change)
+        # Set initial value
+        self.connection_status.set("Not Connected")
         
         # Configure emergency stop button style
         style = ttk.Style()
@@ -607,11 +615,19 @@ class MainWindow:
                 threading.Thread(target=sync_macros, daemon=True).start()
                 
             else:
-                self.connection_status.set("Connection failed")
+                self.connection_status.set("Not Connected")
                 self._log_message("Failed to connect to controller", "red")
         except Exception as e:
-            self.connection_status.set("Connection error")
+            self.connection_status.set("Not Connected")
             self._log_message(f"Connection error: {e}", "red")
+
+    def _on_connection_status_change(self, *args):
+        """Update label color based on current connection status."""
+        status = self.connection_status.get().lower()
+        if status == "connected":
+            self.status_label.configure(foreground="#00cc00")  # bright green
+        else:
+            self.status_label.configure(foreground="#ff0000")  # bright red
 
     def _start_position_updates(self):
         """Start periodic position updates."""
@@ -659,11 +675,11 @@ class MainWindow:
                 self._start_position_updates()
                 return True
             else:
-                self.connection_status.set("Connection failed")
+                self.connection_status.set("Not Connected")
                 self._log_message("Failed to connect to controller", "red")
                 return False
         except Exception as e:
-            self.connection_status.set("Connection error")
+            self.connection_status.set("Not Connected")
             self._log_message(f"Connection error: {e}", "red")
             return False
     
@@ -671,7 +687,7 @@ class MainWindow:
         """Disconnect from the controller."""
         try:
             self.communicator.close()
-            self.connection_status.set("Disconnected")
+            self.connection_status.set("Not Connected")
             self._log_message("Disconnected from controller")
             return True
         except Exception as e:
@@ -710,7 +726,7 @@ class MainWindow:
                 # Handle connection state updates
                 if isinstance(state, dict) and 'connected' in state:
                     is_connected = state['connected']
-                    status_text = "Connected" if is_connected else "Disconnected"
+                    status_text = "Connected" if is_connected else "Not Connected"
                     self.connection_status.set(status_text)
                     
                     # Log the connection state change
