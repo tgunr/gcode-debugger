@@ -33,6 +33,8 @@ class MainWindow:
         self.root.title("G-Code Debugger - Buildbotics Controller")
         print("MainWindow: after root.title")
         self.root.geometry("1400x900")
+        # Center the window on the screen
+        self._center_window()
         print("MainWindow: after root.geometry")
         
         # Store reference to this MainWindow instance in the root for widget access
@@ -443,6 +445,19 @@ class MainWindow:
             error=self._on_local_macro_error
         )
     
+    def _center_window(self):
+        """Center the main window on the user's primary screen."""
+        self.root.update_idletasks()  # Ensure geometry values are current
+        width = self.root.winfo_width()
+        height = self.root.winfo_height()
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+
+        x = (screen_width // 2) - (width // 2)
+        y = (screen_height // 2) - (height // 2)
+        # Apply new geometry keeping size constant
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+
     def _setup_keyboard_shortcuts(self):
         """Setup keyboard shortcuts."""
         self.root.bind('<Control-o>', lambda e: self.open_file())
