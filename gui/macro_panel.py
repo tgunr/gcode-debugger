@@ -140,25 +140,52 @@ class MacroPanel(ttk.LabelFrame):
         self.local_refresh_btn.pack(side=tk.LEFT)
     
     def _setup_external_macro_tab(self):
-        """Setup the external macros tab."""
-        # External macro list frame
-        list_frame = ttk.Frame(self.external_frame)
-        list_frame.pack(fill=tk.X, pady=(5, 5), padx=5)
+        """Setup the external macros tab with a list of available macros and action buttons."""
+        # External macro list frame with border and padding
+        list_frame = ttk.LabelFrame(self.external_frame, text="Available Macros", padding=5)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Configure grid weights for the frame
+        list_frame.columnconfigure(0, weight=1)
+        list_frame.rowconfigure(0, weight=1)
+        
+        # Create a frame for the listbox and scrollbar
+        list_container = ttk.Frame(list_frame)
+        list_container.grid(row=0, column=0, sticky='nsew')
+        
+        # Configure grid weights for the container
+        list_container.columnconfigure(0, weight=1)
+        list_container.rowconfigure(0, weight=1)
         
         # External macro listbox with scrollbar
         self.external_macro_listbox = tk.Listbox(
-            list_frame,
-            height=10,  # Increased from 3 to 10 to show more macros
-            font=("Arial", 8),
-            selectmode=tk.SINGLE
+            list_container,
+            height=10,  # Show 10 items by default
+            font=("Arial", 10),  # Slightly larger font for better readability
+            selectmode=tk.SINGLE,
+            bg='white',
+            fg='black',
+            selectbackground='#4a7abc',
+            selectforeground='white',
+            activestyle='none',  # Remove underline on active item
+            relief=tk.FLAT,
+            borderwidth=1,
+            highlightthickness=1
         )
-        self.external_macro_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
-        external_scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL)
-        external_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        # Add a vertical scrollbar
+        scrollbar = ttk.Scrollbar(
+            list_container,
+            orient=tk.VERTICAL,
+            command=self.external_macro_listbox.yview
+        )
         
-        self.external_macro_listbox.config(yscrollcommand=external_scrollbar.set)
-        external_scrollbar.config(command=self.external_macro_listbox.yview)
+        # Configure the listbox to use the scrollbar
+        self.external_macro_listbox.configure(yscrollcommand=scrollbar.set)
+        
+        # Grid the listbox and scrollbar
+        self.external_macro_listbox.grid(row=0, column=0, sticky='nsew')
+        scrollbar.grid(row=0, column=1, sticky='ns')
         
         # Bind events for external macros
         self.external_macro_listbox.bind('<<ListboxSelect>>', self._on_external_macro_select)
@@ -237,13 +264,38 @@ class MacroPanel(ttk.LabelFrame):
         )
         self.external_refresh_btn.pack(side=tk.LEFT)
     
+    def refresh_macro_lists(self):
+        """Refresh both local and external macro lists."""
+        self._refresh_local_macro_list()
+        self._refresh_external_macro_list()
+        
+        # Update button states for the current tab
+        if hasattr(self, 'current_tab'):
+            if self.current_tab == "local":
+                self._update_local_button_states()
+            else:
+                self._update_external_button_states()
+    
     def _on_tab_changed(self, event):
-        """Handle tab change event."""
-        selected_tab = self.notebook.index(self.notebook.select())
-        if selected_tab == 0:
-            self.current_tab = "local"
-        else:
-            self.current_tab = "external"
+        """Handle tab change event between local and external macros."""
+        try:
+            selected_tab = self.notebook.index(self.notebook.select())
+            
+            if selected_tab == 0:  # Local macros tab
+                self.current_tab = "local"
+                self._refresh_local_macro_list()
+            else:  # External macros tab
+                self.current_tab = "external"
+                self._refresh_external_macro_list()
+            
+            # Update button states for the active tab
+            if self.current_tab == "local":
+                self._update_local_button_states()
+            else:
+                self._update_external_button_states()
+                
+        except Exception as e:
+            print(f"Error handling tab change: {str(e)}")
     
     def _refresh_macro_lists(self):
         """Refresh both macro list displays."""
@@ -270,34 +322,105 @@ class MacroPanel(ttk.LabelFrame):
     
     def _refresh_external_macro_list(self):
         """Refresh the external macro list display."""
-        self.external_macro_listbox.delete(0, tk.END)
-        
-        external_macros = self.macro_manager.get_all_macros()
-        for macro in sorted(external_macros, key=lambda m: (m.category, m.name)):
-            # Color code by category
-            color_prefix = self._get_category_prefix(macro.category)
-            display_text = f"{color_prefix} {macro.name}"
-            if macro.description:
-                display_text += f" - {macro.description[:25]}"
-                if len(macro.description) > 25:
-                    display_text += "..."
+        try:
+            # Clear the listbox first
+            self.external_macro_listbox.delete(0, tk.END)
             
-            self.external_macro_listbox.insert(tk.END, display_text)
+            # Get all macros from the manager
+            external_macros = self.macro_manager.get_all_macros()
+            
+            # Try to reload macros if none found
+            if not external_macros and hasattr(self.macro_manager, 'load_macros'):
+                self.macro_manager.load_macros()
+                external_macros = self.macro_manager.get_all_macros()
+            
+            # Sort macros by category and name (case-insensitive)
+            sorted_macros = sorted(
+                external_macros,
+                key=lambda m: (str(getattr(m, 'category', '')).lower(), 
+                             str(getattr(m, 'name', '')).lower())
+            )
+            
+            # Add macros to the listbox
+            for macro in sorted_macros:
+                try:
+                    # Get macro attributes with safe defaults
+                    name = str(getattr(macro, 'name', 'Unnamed')).strip()
+                    category = str(getattr(macro, 'category', 'uncategorized')).strip()
+                    desc = str(getattr(macro, 'description', '')).strip()
+                    
+                    # Get emoji prefix for the category
+                    color_prefix = self._get_category_prefix(category)
+                    
+                    # Build display text
+                    display_text = f"{color_prefix} {name}"
+                    if desc:
+                        display_text += f" - {desc[:25]}"
+                        if len(desc) > 25:
+                            display_text += "..."
+                    
+                    # Add to listbox
+                    self.external_macro_listbox.insert(tk.END, display_text)
+                    
+                except Exception as e:
+                    print(f"Error processing macro: {str(e)}")
+                    continue
+            
+        except Exception as e:
+            print(f"Error refreshing external macro list: {str(e)}")
+            # Show error in the UI
+            self.external_macro_listbox.insert(tk.END, "Error loading macros. Check console for details.")
         
         self._update_external_button_states()
     
     def _get_category_prefix(self, category: str) -> str:
         """Get emoji prefix for macro category."""
+        # Convert to lowercase and strip whitespace for consistent matching
+        if category:
+            category = str(category).lower().strip()
+        
+        # Define all possible categories with their emojis
         prefixes = {
             "system": "⚙️",
+            "sys": "⚙️",
             "homing": "🏠",
+            "home": "🏠",
             "tool_change": "🔧",
+            "toolchange": "🔧",
+            "tool": "🔧",
             "probing": "📐",
+            "probe": "📐",
             "user": "👤",
             "custom": "⭐",
-            "debug": "🐛"
+            "debug": "🐛",
+            "mdi": "⌨️",
+            "gcode": "📜",
+            "setup": "🔧",
+            "calibration": "🎚️",
+            "utility": "🛠️",
+            "maintenance": "🔧",
+            "test": "🧪",
+            "safety": "⚠️",
+            "spindle": "🌀",
+            "coolant": "💧",
+            "jog": "🎮",
+            "zero": "0️⃣",
+            "reference": "📍"
         }
-        return prefixes.get(category, "📝")
+        
+        # Try exact match first
+        if category in prefixes:
+            return prefixes[category]
+            
+        # Try partial matching (e.g., "toolchange" matches "tool_change")
+        for key, emoji in prefixes.items():
+            if key in category or category in key:
+                print(f"DEBUG: Matched category '{category}' to emoji '{emoji}'")
+                return emoji
+        
+        # Default emoji for unknown categories
+        print(f"DEBUG: Using default emoji for unknown category: '{category}'")
+        return "📝"
     
     # Local macro event handlers
     def _on_local_macro_select(self, event):

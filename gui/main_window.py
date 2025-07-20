@@ -38,14 +38,29 @@ class MainWindow:
         # Store reference to this MainWindow instance in the root for widget access
         self.root.main_window = self
         
-        # Initialize core components
-        self.communicator = BBCtrlCommunicator(callback_scheduler=self._thread_safe_callback)
+        # Initialize configuration
+        from core.config import get_config
+        self.config = get_config()
+        
+        # Initialize core components with configured host and port
+        host = self.config.get('connection.host', 'bbctrl.polymicro.net')
+        port = self.config.get('connection.port', 80)
+        self.communicator = BBCtrlCommunicator(
+            host=host,
+            port=port,
+            callback_scheduler=self._thread_safe_callback
+        )
         self.debugger = GCodeDebugger(self.communicator)
-        self.macro_manager = MacroManager("macros")
+        
+        # Initialize macro managers with configured paths
+        macros_dir = self.config.get_external_macros_dir()
+        local_macros_dir = self.config.get('paths.local_macros', 'local_macros')
+        
+        self.macro_manager = MacroManager(macros_dir)
         self.macro_executor = MacroExecutor(self.communicator)
         
         # Initialize local macro components
-        self.local_macro_manager = LocalMacroManager("local_macros")
+        self.local_macro_manager = LocalMacroManager(local_macros_dir)
         self.local_macro_executor = LocalMacroExecutor(self.communicator)
         
         # GUI components
@@ -79,6 +94,116 @@ class MainWindow:
         else:
             self.root.after(0, lambda: func(*args, **kwargs))
     
+    def _update_macro_ui(self):
+        """Safely update the macro UI components."""
+        try:
+            if hasattr(self, 'macro_panel') and self.macro_panel:
+                print("  Refreshing macro panel...")
+                # Ensure we're on the main thread
+                if threading.get_ident() != self._main_thread:
+                    self.root.after(0, self._update_macro_ui)
+                    return
+                    
+                self.macro_panel.refresh_macro_lists()
+                print("  Macro panel refreshed successfully")
+        except Exception as e:
+            print(f"ERROR in _update_macro_ui: {str(e)}")
+            
+    def show_preferences(self):
+        """Show the preferences dialog."""
+        from gui.preferences_dialog import PreferencesDialog
+        
+        def on_preferences_saved():
+            """Callback when preferences are saved."""
+            try:
+                # Get new paths from config
+                new_macros_dir = self.config.get('paths.external_macros')
+                new_local_macros_dir = self.config.get('paths.local_macros', 'local_macros')
+                
+                print(f"DEBUG: Preferences saved, checking for directory changes...")
+                print(f"  Current external macros dir: {getattr(self.macro_manager, 'macros_directory', 'N/A')}")
+                print(f"  New external macros dir: {new_macros_dir}")
+                
+                # Ensure we're on the main thread for UI operations
+                if threading.get_ident() != self._main_thread:
+                    self.root.after(0, on_preferences_saved)
+                    return
+                    
+                # Reinitialize macro managers if paths changed
+                if hasattr(self, 'macro_manager') and new_macros_dir:
+                    new_macros_dir = os.path.abspath(os.path.expanduser(str(new_macros_dir)))
+                    current_dir = getattr(self.macro_manager, 'macros_directory', '')
+                    
+                    if new_macros_dir != current_dir:
+                        print(f"  External macros directory changed to: {new_macros_dir}")
+                        try:
+                            # Ensure the directory exists and is writable
+                            os.makedirs(new_macros_dir, exist_ok=True)
+                            if not os.access(new_macros_dir, os.W_OK):
+                                raise PermissionError(f"Directory is not writable: {new_macros_dir}")
+                            
+                            # Clean up any existing macro manager resources
+                            if hasattr(self.macro_manager, 'cleanup'):
+                                self.macro_manager.cleanup()
+                            
+                            # Reinitialize the macro manager
+                            self.macro_manager = MacroManager(new_macros_dir)
+                            print("  Successfully reinitialized macro manager with new directory")
+                            
+                            # Schedule UI update on the main thread
+                            self.root.after(100, self._update_macro_ui)
+                            
+                        except Exception as e:
+                            print(f"ERROR: Failed to reinitialize macro manager: {str(e)}")
+                            messagebox.showerror(
+                                "Error",
+                                f"Failed to set external macros directory to {new_macros_dir}:\n\n{str(e)}\n\n"
+                                "Please check that the directory exists and is writable."
+                            )
+                            return  # Don't proceed with UI updates if there was an error
+                
+                # Handle local macro directory changes
+                if hasattr(self, 'local_macro_manager') and new_local_macros_dir:
+                    new_local_macros_dir = os.path.abspath(os.path.expanduser(str(new_local_macros_dir)))
+                    current_local_dir = getattr(self.local_macro_manager, 'macros_directory', '')
+                    
+                    if new_local_macros_dir != current_local_dir:
+                        print(f"  Local macros directory changed to: {new_local_macros_dir}")
+                        try:
+                            # Clean up any existing local macro manager resources
+                            if hasattr(self.local_macro_manager, 'cleanup'):
+                                self.local_macro_manager.cleanup()
+                                
+                            os.makedirs(new_local_macros_dir, exist_ok=True)
+                            self.local_macro_manager = LocalMacroManager(new_local_macros_dir)
+                            
+                            # Schedule UI update on the main thread
+                            self.root.after(100, self._update_macro_ui)
+                            
+                        except Exception as e:
+                            print(f"WARNING: Failed to reinitialize local macro manager: {str(e)}")
+                
+                # Refresh UI if not already handled by directory changes
+                if not (hasattr(self, 'macro_manager') and new_macros_dir):
+                    self.root.after(100, self._update_macro_ui)
+                    
+            except Exception as e:
+                print(f"ERROR in on_preferences_saved: {str(e)}")
+                messagebox.showerror(
+                    "Error",
+                    f"An error occurred while applying preferences:\n\n{str(e)}"
+                )
+        
+        try:
+            # Create and show the preferences dialog
+            print("DEBUG: Showing preferences dialog...")
+            dialog = PreferencesDialog(self.root, self.config, on_save=on_preferences_saved)
+            dialog.show()
+            print("DEBUG: Preferences dialog closed")
+        except Exception as e:
+            print(f"ERROR: Failed to show preferences dialog: {str(e)}")
+            messagebox.showerror("Error", f"Failed to open preferences: {str(e)}")
+    
     def _setup_menu(self):
         """Setup the menu bar."""
         menubar = tk.Menu(self.root)
@@ -89,6 +214,8 @@ class MainWindow:
         menubar.add_cascade(label="File", menu=file_menu)
         file_menu.add_command(label="Open G-code File...", command=self.open_file, accelerator="Ctrl+O")
         file_menu.add_command(label="Reload File", command=self.reload_file, accelerator="F5")
+        file_menu.add_separator()
+        file_menu.add_command(label="Preferences...", command=self.show_preferences, accelerator="Ctrl+,")
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.exit_application, accelerator="Ctrl+Q")
         
@@ -324,12 +451,8 @@ class MainWindow:
     
     def _attempt_connection(self):
         """Attempt to connect to the controller on startup."""
-        if self.communicator.connect_websocket():
-            self.connection_status.set("Connected")
-            self._log_message("Connected to bbctrl controller")
-        else:
-            self.connection_status.set("Disconnected")
-            self._log_message("Failed to connect to bbctrl controller")
+        self._log_message("Attempting to connect to controller...", "yellow")
+        self.communicator.connect_websocket()
     
     # File operations
     def open_file(self):
@@ -444,7 +567,7 @@ class MainWindow:
 
     # Connection operations
     def _attempt_connection(self):
-        """Attempt to connect to the controller on startup."""
+        """Attempt to connect to the controller on startup and sync macros."""
         try:
             if self.communicator.connect_websocket():
                 self.connection_status.set("Connected")
@@ -457,6 +580,32 @@ class MainWindow:
                 
                 # Start position updates
                 self._start_position_updates()
+                
+                # Sync macros from controller in a background thread to avoid blocking the UI
+                def sync_macros():
+                    try:
+                        self._thread_safe_callback(self._log_message,
+                                                   "Starting macro synchronization from controller...",
+                                                   "blue")
+                        if self.macro_manager.sync_from_controller(self.communicator):
+                            self._thread_safe_callback(self._log_message,
+                                                       "Macro synchronization completed successfully",
+                                                       "green")
+                            # Refresh macro panel if it exists
+                            if hasattr(self, 'macro_panel') and self.macro_panel:
+                                self.root.after(0, self.macro_panel.refresh_macro_lists)
+                        else:
+                            self._thread_safe_callback(self._log_message,
+                                                       "Warning: Macro synchronization completed with issues",
+                                                       "orange")
+                    except Exception as e:
+                        self._thread_safe_callback(self._log_message,
+                                                   f"Error during macro synchronization: {e}",
+                                                   "red")
+                
+                # Start macro sync in a separate thread
+                threading.Thread(target=sync_macros, daemon=True).start()
+                
             else:
                 self.connection_status.set("Connection failed")
                 self._log_message("Failed to connect to controller", "red")
@@ -545,35 +694,176 @@ class MainWindow:
 
     # Callback handlers
     def _on_machine_state_changed(self, state):
-        """Handle machine state changes."""
+        """Handle machine state and connection state changes.
+        
+        Args:
+            state: Dictionary containing the machine state or connection state.
+                  For connection state, expects {'connected': bool}.
+                  For machine state, expects {'xx': state_str, ...}.
+        """
         def update():
-            state_str = state.get('xx', 'Unknown')  # 'xx' is the state key in the API
-            self._log_message(f"Machine state: {state_str}", "blue")
-            # Update position display when state changes
-            self._update_position_display()
-        self._thread_safe_callback(update)
+            try:
+                if not self.root or not self.root.winfo_exists():
+                    print("DEBUG: Root window no longer exists, skipping state update")
+                    return
+                
+                # Handle connection state updates
+                if isinstance(state, dict) and 'connected' in state:
+                    is_connected = state['connected']
+                    status_text = "Connected" if is_connected else "Disconnected"
+                    self.connection_status.set(status_text)
+                    
+                    # Log the connection state change
+                    color = "green" if is_connected else "red"
+                    self._log_message(f"Connection: {status_text}", color)
+                    
+                    # If we just connected, update the position display
+                    if is_connected and hasattr(self, '_update_position_display'):
+                        self._update_position_display()
+                    
+                    return  # Skip machine state processing for connection updates
+                
+                # Handle machine state updates (original behavior)
+                if isinstance(state, dict):
+                    state_str = state.get('xx', 'Unknown')  # 'xx' is the state key in the API
+                    self._log_message(f"Machine state: {state_str}", "blue")
+                    
+                    # Update position display when state changes
+                    if hasattr(self, '_update_position_display'):
+                        self._update_position_display()
+                
+            except Exception as e:
+                print(f"ERROR in _on_machine_state_changed: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Ensure we're on the main thread
+        if self._main_thread == threading.get_ident():
+            update()
+        else:
+            self._thread_safe_callback(update)
 
     def _on_communication_message(self, message, color="green"):
-        """Handle communication messages."""
-        # Enhanced handling for different message types
-        if "RAW WS MESSAGE:" in message:
-            self._thread_safe_callback(self._log_message, message, "cyan")
-        elif "COMMAND RESPONSE:" in message:
-            self._thread_safe_callback(self._log_message, message, "yellow")
-        elif "NON-JSON MESSAGE:" in message:
-            self._thread_safe_callback(self._log_message, message, "white")
-        elif message.startswith("[MSG]"):
-            # MSG command output - display prominently
-            self._thread_safe_callback(self._log_message, message, "yellow")
-        elif message.startswith("[DEBUG]"):
-            # DEBUG command output - display prominently
-            self._thread_safe_callback(self._log_message, message, "magenta")
-        else:
-            self._thread_safe_callback(self._log_message, f"COMM: {message}", color)
+        """Handle communication messages.
+        
+        Args:
+            message: The message to display
+            color: Color for the message (default: "green")
+        """
+        def log_message():
+            try:
+                # Check if we can safely access the root window
+                try:
+                    if not hasattr(self, 'root') or not self.root:
+                        print("DEBUG: Root window not available")
+                        return
+                        
+                    # Check if the root window still exists and is valid
+                    try:
+                        if not self.root.winfo_exists():
+                            print("DEBUG: Root window no longer exists")
+                            return
+                    except Exception as e:
+                        print(f"DEBUG: Error checking root window: {e}")
+                        return
+                except Exception as e:
+                    print(f"DEBUG: Error in root window check: {e}")
+                    return
+                
+                # Safely handle the message
+                try:
+                    if message is None:
+                        print("DEBUG: Received None message")
+                        return
+                        
+                    msg_str = str(message)  # Convert to string safely
+                    if not msg_str.strip():
+                        print("DEBUG: Received empty message")
+                        return
+                    
+                    # Log the raw message for debugging
+                    print(f"DEBUG: Processing message: {msg_str[:200]}{'...' if len(msg_str) > 200 else ''}")
+                    
+                    # Enhanced handling for different message types
+                    if not hasattr(self, '_log_message'):
+                        print("ERROR: _log_message method not available")
+                        return
+                        
+                    try:
+                        if "RAW WS MESSAGE:" in msg_str:
+                            self._log_message(msg_str, "cyan")
+                        elif "COMMAND RESPONSE:" in msg_str:
+                            self._log_message(msg_str, "yellow")
+                        elif "NON-JSON MESSAGE:" in msg_str:
+                            self._log_message(msg_str, "white")
+                        elif msg_str.startswith("[") and "]" in msg_str:  # Check for [TAG] format
+                            try:
+                                tag = msg_str[1:msg_str.find("]")].upper()
+                                if tag == "MSG":
+                                    self._log_message(msg_str, "yellow")
+                                elif tag == "DEBUG":
+                                    self._log_message(msg_str, "magenta")
+                                else:
+                                    self._log_message(f"COMM: {msg_str}", color)
+                            except Exception as e:
+                                print(f"WARNING: Error processing tagged message: {e}")
+                                self._log_message(f"COMM: {msg_str}", color)
+                        else:
+                            self._log_message(f"COMM: {msg_str}", color)
+                    except Exception as e:
+                        print(f"ERROR in message processing: {e}")
+                        
+                except Exception as e:
+                    error_msg = f"Error converting message to string: {str(e)}"
+                    print(f"ERROR: {error_msg}")
+                    if hasattr(self, '_log_message'):
+                        self._log_message(f"ERROR: {error_msg}", "red")
+                    
+            except Exception as e:
+                error_msg = f"Critical error in log_message: {str(e)}"
+                print(f"CRITICAL ERROR: {error_msg}")
+                import traceback
+                traceback.print_exc()
+        
+        # Ensure thread safety
+        try:
+            current_thread = threading.get_ident()
+            if current_thread == self._main_thread:
+                log_message()
+            else:
+                # Use after() to schedule on the main thread if we're not on it
+                try:
+                    if hasattr(self, 'root') and self.root and hasattr(self.root, 'after'):
+                        self.root.after(0, log_message)
+                    else:
+                        print("WARNING: Cannot schedule log_message - root window not ready")
+                except Exception as e:
+                    print(f"ERROR scheduling log_message: {e}")
+        except Exception as e:
+            print(f"CRITICAL: Error in thread safety check: {e}")
     
     def _on_communication_error(self, error):
-        """Handle communication errors."""
-        self._thread_safe_callback(self._log_message, f"ERROR: {error}", "red")
+        """Handle communication errors.
+        
+        Args:
+            error: The error message to display
+        """
+        def log_error():
+            try:
+                if not self.root or not self.root.winfo_exists():
+                    print(f"DEBUG: Root window no longer exists, dropping error: {error}")
+                    return
+                self._log_message(f"ERROR: {error}", "red")
+            except Exception as e:
+                print(f"ERROR in _on_communication_error: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Ensure we're on the main thread
+        if self._main_thread == threading.get_ident():
+            log_error()
+        else:
+            self._thread_safe_callback(log_error)
     
     def _on_current_line_changed(self, line_number):
         """Handle current line changes."""

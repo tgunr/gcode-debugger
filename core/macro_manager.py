@@ -27,19 +27,32 @@ class MacroManager:
     """Manages G-code macros for the debugger."""
     
     def __init__(self, macros_directory: str = "macros"):
-        self.macros_directory = macros_directory
+        self.macros_directory = os.path.abspath(os.path.expanduser(str(macros_directory)))
         self.macros: Dict[str, Macro] = {}
         self.categories = ["system", "user", "homing", "tool_change", "probing", "custom"]
         
-        # Ensure macros directory exists
-        os.makedirs(self.macros_directory, exist_ok=True)
+        print(f"DEBUG: Initializing MacroManager with directory: {self.macros_directory}")
         
-        # Load existing macros
-        self.load_macros()
-        
-        # Create default macros if none exist
-        if not self.macros:
-            self._create_default_macros()
+        try:
+            # Ensure macros directory exists
+            os.makedirs(self.macros_directory, exist_ok=True)
+            
+            # Verify directory is writable
+            if not os.access(self.macros_directory, os.W_OK):
+                print(f"WARNING: Directory is not writable: {self.macros_directory}")
+            
+            # Load existing macros
+            self.load_macros()
+            
+            # Create default macros if none exist
+            if not self.macros:
+                print("DEBUG: No macros found, creating default macros")
+                self._create_default_macros()
+                
+        except Exception as e:
+            print(f"ERROR: Failed to initialize MacroManager: {str(e)}")
+            # Try to continue with empty macro list if there's an error
+            self.macros = {}
     
     def create_macro(self, name: str, commands: List[str], description: str = "", 
                     category: str = "user", color: str = "#e6e6e6", hotkey: str = "") -> bool:
@@ -145,18 +158,171 @@ class MacroManager:
     
     def load_macros(self):
         """Load all macros from the macros directory."""
+        print(f"DEBUG: Loading macros from directory: {os.path.abspath(self.macros_directory)}")
         if not os.path.exists(self.macros_directory):
+            print(f"ERROR: Macros directory does not exist: {os.path.abspath(self.macros_directory)}")
             return
         
+        file_count = 0
         for filename in os.listdir(self.macros_directory):
             if filename.endswith('.json'):
+                file_count += 1
                 name = filename[:-5]  # Remove .json extension
-                self.load_macro(name)
+                print(f"DEBUG: Loading macro from file: {filename}")
+                if not self.load_macro(name):
+                    print(f"WARNING: Failed to load macro from file: {filename}")
+        
+        print(f"DEBUG: Loaded {len(self.macros)} macros from {file_count} files")
     
     def save_all_macros(self):
         """Save all macros to files."""
         for name in self.macros:
             self.save_macro(name)
+    
+    def sync_from_controller(self, communicator) -> bool:
+        """Sync macros from the controller to the local directory.
+        
+        Args:
+            communicator: BBCtrlCommunicator instance for controller communication
+            
+        Returns:
+            bool: True if sync was successful, False otherwise
+        """
+        print("DEBUG: Starting sync_from_controller")
+        try:
+            # Ensure directory exists and is writable
+            print(f"DEBUG: Ensuring directory exists: {self.macros_directory}")
+            os.makedirs(self.macros_directory, exist_ok=True)
+            if not os.access(self.macros_directory, os.W_OK):
+                error_msg = f"ERROR: Directory is not writable: {self.macros_directory}"
+                print(error_msg)
+                return False
+            
+            # Get macros from controller
+            print("DEBUG: Fetching macros from controller...")
+            controller_macros = communicator.get_macros()
+            if controller_macros is None:
+                print("WARNING: No macros found on controller or failed to fetch")
+                return False
+                
+            print(f"DEBUG: Found {len(controller_macros)} macros on controller")
+            if controller_macros:
+                print(f"DEBUG: Controller macro names: {list(controller_macros.keys())}")
+            
+            synced_macros = set()
+            
+            # Process each macro from controller
+            for macro_name, macro_data in controller_macros.items():
+                try:
+                    print(f"DEBUG: Processing macro: {macro_name}")
+                    # Skip invalid macro names
+                    if not macro_name or not isinstance(macro_name, str):
+                        print(f"WARNING: Skipping invalid macro name: {macro_name}")
+                        continue
+                        
+                    print(f"DEBUG: Macro data type: {type(macro_data).__name__}")
+                    # Convert controller macro format to our format if needed
+                    if not isinstance(macro_data, dict):
+                        print("DEBUG: Converting non-dict macro data to standard format")
+                        macro_data = {
+                            'name': macro_name,
+                            'commands': macro_data if isinstance(macro_data, list) else [str(macro_data)],
+                            'description': f"Synced from controller: {macro_name}",
+                            'category': 'system',
+                            'color': '#e6e6e6',
+                            'hotkey': ''
+                        }
+                    
+                    # Ensure commands is a list of strings
+                    if 'commands' not in macro_data:
+                        macro_data['commands'] = []
+                    elif not isinstance(macro_data['commands'], list):
+                        macro_data['commands'] = [str(macro_data['commands'])]
+                    else:
+                        macro_data['commands'] = [str(cmd) for cmd in macro_data['commands']]
+                    
+                    # Set default values for required fields
+                    current_time = datetime.now().isoformat()
+                    print(f"DEBUG: Setting default values for macro: {macro_name}")
+                    macro_data.setdefault('name', macro_name)
+                    macro_data.setdefault('description', f"Synced from controller: {macro_name}")
+                    macro_data.setdefault('created_date', current_time)
+                    macro_data.setdefault('modified_date', current_time)
+                    macro_data.setdefault('category', 'system')
+                    macro_data.setdefault('color', '#e6e6e6')
+                    macro_data.setdefault('hotkey', '')
+                    
+                    # Ensure commands is a list of strings
+                    if 'commands' not in macro_data:
+                        macro_data['commands'] = []
+                        print("DEBUG: No commands found in macro, initializing empty list")
+                    elif not isinstance(macro_data['commands'], list):
+                        macro_data['commands'] = [str(macro_data['commands'])]
+                        print("DEBUG: Converted non-list commands to list")
+                    else:
+                        macro_data['commands'] = [str(cmd) for cmd in macro_data['commands']]
+                    
+                    print(f"DEBUG: Macro {macro_name} has {len(macro_data['commands'])} commands")
+                    
+                    # Create or update the macro
+                    if macro_name in self.macros:
+                        print(f"DEBUG: Updating existing macro: {macro_name}")
+                        # Update existing macro
+                        self.update_macro(
+                            name=macro_name,
+                            commands=macro_data['commands'],
+                            description=macro_data.get('description', ''),
+                            category=macro_data.get('category', 'system'),
+                            color=macro_data.get('color', '#e6e6e6'),
+                            hotkey=macro_data.get('hotkey', '')
+                        )
+                        action = "Updated"
+                    else:
+                        print(f"DEBUG: Creating new macro: {macro_name}")
+                        # Create new macro
+                        self.create_macro(
+                            name=macro_name,
+                            commands=macro_data['commands'],
+                            description=macro_data.get('description', ''),
+                            category=macro_data.get('category', 'system'),
+                            color=macro_data.get('color', '#e6e6e6'),
+                            hotkey=macro_data.get('hotkey', '')
+                        )
+                        action = "Created"
+                    
+                    synced_macros.add(macro_name)
+                    print(f"{action} macro: {macro_name}")
+                    
+                except Exception as e:
+                    print(f"ERROR: Failed to sync macro {macro_name}: {e}")
+            
+            print(f"DEBUG: Checking for local macros to remove (synced: {len(synced_macros)} macros)")
+            # Remove any local macros that don't exist on the controller
+            local_macros = set(self.macros.keys())
+            macros_to_remove = local_macros - synced_macros
+            print(f"DEBUG: Found {len(macros_to_remove)} local macros to remove")
+            
+            for macro_name in macros_to_remove:
+                try:
+                    print(f"DEBUG: Removing local macro not on controller: {macro_name}")
+                    if self.delete_macro(macro_name):
+                        print(f"Removed local macro not on controller: {macro_name}")
+                    else:
+                        print(f"WARNING: Failed to remove local macro: {macro_name}")
+                except Exception as e:
+                    print(f"ERROR: Failed to remove local macro {macro_name}: {e}")
+            
+            # Reload macros from disk to update our in-memory state
+            print("DEBUG: Reloading macros from disk...")
+            self.load_macros()
+            print(f"DEBUG: Sync completed. Total macros: {len(self.macros)}")
+            return True
+            
+        except Exception as e:
+            import traceback
+            error_msg = f"ERROR: Failed to sync macros from controller: {e}\n{traceback.format_exc()}"
+            print(error_msg)
+            return False
     
     def export_macro(self, name: str, filepath: str) -> bool:
         """Export a macro to a G-code file."""
@@ -196,6 +362,12 @@ class MacroManager:
             return self.create_macro(name, commands, description, category)
         except Exception:
             return False
+    
+    def cleanup(self):
+        """Clean up any resources used by the macro manager."""
+        print(f"DEBUG: Cleaning up MacroManager for directory: {self.macros_directory}")
+        # Clear any cached macros
+        self.macros.clear()
     
     def _create_default_macros(self):
         """Create default system macros."""
