@@ -33,6 +33,11 @@ class MacroPanel(ttk.LabelFrame):
         self.current_tab = "local"  # Track which tab is active
         self.path_history = []  # For navigation history
         self.current_path = "Home"  # Current directory path
+        
+        # UI update queue for thread safety
+        self.ui_queue = queue.Queue()
+        self.after(100, self._process_ui_queue)
+        
         self.setup_ui()
         self._refresh_macro_lists()
     
@@ -460,118 +465,139 @@ class MacroPanel(ttk.LabelFrame):
                 except Exception as ui_error:
                     print(f"ERROR showing error in UI: {str(ui_error)}")
     
+    def _process_ui_queue(self):
+        """Process UI updates from the queue."""
+        try:
+            while not self.ui_queue.empty():
+                func, args, kwargs = self.ui_queue.get_nowait()
+                func(*args, **kwargs)
+        except queue.Empty:
+            pass
+        finally:
+            self.after(100, self._process_ui_queue)
+
+    def _queue_ui_update(self, func, *args, **kwargs):
+        """Safely queue a function to be run on the main thread."""
+        self.ui_queue.put((func, args, kwargs))
+
     def _load_directory(self, path: str):
         """
         Load the contents of the specified directory into the treeview.
-        
-        Args:
-            path: The directory path to load
+        This method is now fully thread-safe.
         """
         print(f"\n{'='*80}")
-        print(f"DEBUG: _load_directory('{path}')")
-        print(f"Thread: {threading.current_thread().name}")
-        
-        # Ensure path is a string and not empty
+        print(f"DEBUG: _load_directory('{path}') called from thread: {threading.current_thread().name}")
+
         if not isinstance(path, str) or not path.strip():
             print(f"ERROR: Invalid path provided: {path}")
             return
-        
-        # Store the current path
+
         self.current_path = path
-        print(f"DEBUG: Set current_path to: {self.current_path}")
-        
-        # Initialize path_history if it doesn't exist
         if not hasattr(self, 'path_history'):
             self.path_history = []
-            
-        # Add to navigation history if it's different from the last one
-        if not self.path_history or (self.path_history and self.path_history[-1] != path):
+        if not self.path_history or self.path_history[-1] != path:
             self.path_history.append(path)
-            print(f"DEBUG: Added to path_history: {path}")
-        
-        # Update path display
-        if hasattr(self, 'path_var'):
-            self.path_var.set(f"Path: {path}")
+
+        def setup_loading_ui_and_start_worker():
+            """This function will run on the UI thread to prepare for loading."""
+            print("DEBUG: setup_loading_ui_and_start_worker() on thread:", threading.current_thread().name)
             
-        # Update navigation buttons
-        if hasattr(self, '_update_navigation_buttons'):
-            self._update_navigation_buttons()
-        
-        # Clear the treeview first
-        if not self._safe_clear_treeview():
-            error_msg = "Failed to clear treeview before loading directory"
-            print(f"ERROR: {error_msg}")
-            self._show_error_in_ui(None, error_msg)
-            return
-        
-        # Add loading indicator
-        loading_id = self.tree.insert('', 'end', text='Loading...', values=('', ''), tags=('loading',))
-        self.tree.see(loading_id)
-        self.tree.update()
-        print(f"DEBUG: Loading indicator added with ID: {loading_id}")
-        
-        # Main directory loading function
-        def load_directory_async():
-            """Run directory loading in a separate thread."""
-            try:
-                print(f"DEBUG: load_directory_async() starting for path: {path}")
-                
-                # Check communication interface
-                if not hasattr(self, 'comm') or self.comm is None:
-                    self.after(0, self._show_error_in_ui, loading_id, "Controller communication interface is not available")
-                    return
-                
-                # Verify controller connection
-                if not hasattr(self.comm, 'connected') or not self.comm.connected:
-                    self.after(0, self._show_error_in_ui, loading_id, "Not connected to controller. Please check connection and try again.")
-                    return
-                
-                # Check if list_directory method is available
-                if not hasattr(self.comm, 'list_directory') or not callable(self.comm.list_directory):
-                    self.after(0, self._show_error_in_ui, loading_id, "Controller interface does not support directory listing")
-                    return
-                
-                # Get directory listing
+            # Update path display and nav buttons
+            if hasattr(self, 'path_var'): self.path_var.set(f"Path: {self.current_path}")
+            if hasattr(self, '_update_navigation_buttons'): self._update_navigation_buttons()
+
+            # Clear treeview
+            if hasattr(self, 'tree') and self.tree:
+                for item in self.tree.get_children():
+                    self.tree.delete(item)
+
+            # Add loading indicator
+            loading_id = self.tree.insert('', 'end', text='Loading...', values=('', ''), tags=('loading',))
+            self.tree.see(loading_id)
+            self.tree.update_idletasks() # Use update_idletasks instead of update
+
+            # Now that the UI is ready, start the background thread
+            start_async_load(loading_id)
+
+        def start_async_load(loading_id):
+            """This function starts the actual background network operation."""
+            def load_directory_async():
+                """Run directory loading in a separate thread."""
                 try:
-                    print(f"DEBUG: Requesting directory listing for: {path}")
+                    print(f"DEBUG: load_directory_async() starting for path: {path}")
+                    if not (hasattr(self, 'comm') and self.comm and self.comm.connected):
+                        self._queue_ui_update(self._show_error_in_ui, loading_id, "Not connected to controller.")
+                        return
+
+                    if not hasattr(self.comm, 'list_directory'):
+                        self._queue_ui_update(self._show_error_in_ui, loading_id, "Directory listing not supported.")
+                        return
+                    
                     listing = self.comm.list_directory(path)
-                    print(f"DEBUG: Received {len(listing) if listing else 0} items")
-                    
                     if listing is None:
-                        self.after(0, self._show_error_in_ui, loading_id, "Received None response from list_directory")
+                        self._queue_ui_update(self._show_error_in_ui, loading_id, "No response from controller.")
                         return
-                        
-                    if not isinstance(listing, (list, tuple)):
-                        self.after(0, self._show_error_in_ui, loading_id, f"Invalid response type from controller. Expected list/tuple, got {type(listing).__name__}")
-                        return
-                    
-                    # Schedule UI update on main thread
-                    self.after(0, self._update_ui_with_listing, loading_id, path, listing)
-                    
+
+                    self._queue_ui_update(self._update_ui_with_listing, loading_id, path, listing)
+
                 except Exception as e:
                     error_msg = f"Error listing directory: {str(e)}"
                     print(f"ERROR: {error_msg}")
                     import traceback
                     traceback.print_exc()
-                    self.after(0, self._show_error_in_ui, loading_id, error_msg)
-                    
-            except Exception as e:
-                print(f"ERROR in load_directory_async: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                self.after(0, self._show_error_in_ui, loading_id, f"Unexpected error: {str(e)}")
-        
-        # Start the directory loading in a single background thread
-        print("DEBUG: Starting directory loading thread...")
-        try:
+                    self._queue_ui_update(self._show_error_in_ui, loading_id, error_msg)
+
             thread_obj = threading.Thread(target=load_directory_async, daemon=True, name=f"DirLoad-{path}")
             thread_obj.start()
-            print(f"DEBUG: Directory loading thread started: {thread_obj.name}")
-        except Exception as e:
-            print(f"ERROR: Failed to start directory loading a thread: {str(e)}")
-            self.tree.delete(loading_id)
-            self.tree.insert('', 'end', text=f'Error: {str(e)}', values=('', ''), tags=('error',))
+
+        # Kick off the whole process by queuing the UI setup
+        self._queue_ui_update(setup_loading_ui_and_start_worker)
     
+    def _update_ui_with_listing(self, loading_id, path, listing):
+        """Populate the treeview with the directory listing. Runs on UI thread."""
+        try:
+            # Remove loading indicator
+            if self.tree.exists(loading_id):
+                self.tree.delete(loading_id)
+
+            # Re-clear just in case
+            for item in self.tree.get_children():
+                self.tree.delete(item)
+
+            # Add parent directory ".." if not at root
+            if self.current_path != 'Home':
+                parent_path = '/'.join(self.current_path.split('/')[:-1]) if '/' in self.current_path else 'Home'
+                self.tree.insert('', 'end', text='..', values=('', ''), image=self.folder_icon, tags=('directory', parent_path))
+
+            if not listing:
+                self.tree.insert('', 'end', text='<Empty Directory>', tags=('empty',))
+                return
+
+            # Sort items: directories first, then by name
+            listing.sort(key=lambda x: (x.get('type') != 'directory', x.get('name', '').lower()))
+
+            for item in listing:
+                name = item.get('name')
+                item_type = item.get('type')
+                full_path = f"{path}/{name}" if path != 'Home' else name
+
+                if item_type == 'directory':
+                    self.tree.insert('', 'end', text=name, values=('', ''), image=self.folder_icon, tags=('directory', full_path))
+                else:
+                    size = self._format_size(item.get('size'))
+                    modified_timestamp = item.get('modified', 0)
+                    try:
+                        modified = datetime.fromtimestamp(modified_timestamp).strftime('%Y-%m-%d %H:%M:%S')
+                    except (ValueError, TypeError):
+                        modified = 'N/A'
+                    
+                    is_macro = name.lower().endswith(('.gcode', '.nc', '.tap'))
+                    icon = self.macro_icon if is_macro else self.file_icon
+                    self.tree.insert('', 'end', text=name, values=(size, modified), image=icon, tags=('file', full_path))
+        except Exception as e:
+            print(f"ERROR updating UI with listing: {e}")
+            self._show_error_in_ui(None, f"UI Error: {e}")
+
     def _format_size(self, size_bytes):
         """Convert file size in bytes to human-readable format.
         
@@ -1696,45 +1722,37 @@ class MacroPanel(ttk.LabelFrame):
             return "0 B"
     
     def _safe_clear_treeview(self):
-        """Safely clear all items from the treeview."""
-        if hasattr(self, 'tree') and self.tree:
+        """Safely clear all items from the treeview by queuing the operation."""
+        def do_clear():
+            if hasattr(self, 'tree') and self.tree:
+                for item in self.tree.get_children():
+                    try:
+                        self.tree.delete(item)
+                    except tk.TclError:
+                        # Item might have been deleted by another operation
+                        pass
+        self._queue_ui_update(do_clear)
+        return True
+
+    def _show_error_in_ui(self, loading_id, error_msg):
+        """Display an error message in the UI. This method must be called from the UI thread or queued."""
+        print(f"DEBUG: _show_error_in_ui on thread {threading.current_thread().name}")
+        try:
+            # Remove loading indicator if it exists
+            if loading_id is not None and self.tree.exists(loading_id):
+                self.tree.delete(loading_id)
+            
+            # Clear existing items
             for item in self.tree.get_children():
                 self.tree.delete(item)
-            
-    def _show_error_in_ui(self, loading_id, error_msg):
-        """Display an error message in the UI.
-        
-        Args:
-            loading_id: The ID of the loading item to remove
-            error_msg: The error message to display
-        """
-        def _do_show_error():
-            try:
-                # Remove loading indicator if it exists
-                if loading_id is not None and hasattr(self, 'tree') and self.tree is not None:
-                    try:
-                        self.tree.delete(loading_id)
-                    except:
-                        pass  # Ignore errors when removing loading indicator
-                
-                # Clear existing items using our safe method
-                self._safe_clear_treeview()
-                
-                # Add error message
-                if hasattr(self, 'tree') and self.tree is not None:
-                    self.tree.insert('', 'end', text=error_msg, tags=('error',))
-                    
-            except Exception as e:
-                print(f"Error showing error message: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                
-        # Ensure we're on the main thread
-        if threading.current_thread() is threading.main_thread():
-            _do_show_error()
-        else:
-            if hasattr(self, 'after') and callable(self.after):
-                self.after(0, _do_show_error)
+
+            # Add error message
+            self.tree.insert('', 'end', text=error_msg, tags=('error',))
+
+        except Exception as e:
+            print(f"FATAL ERROR in _show_error_in_ui: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def _on_nav_up(self):
         """Handle Up button click to navigate to parent directory."""
