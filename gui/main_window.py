@@ -426,9 +426,10 @@ class MainWindow:
         # Pass the communicator to MacroPanel for controller communication
         self.macro_panel = MacroPanel(
             macro_frame, 
-            self.macro_manager, 
+            self.macro_manager,
             self.local_macro_manager,
-            comm=self.communicator  # Pass the communicator
+            comm=self.communicator,
+            main_window=self
         )
         self.macro_panel.pack(fill=tk.BOTH, expand=True)
         

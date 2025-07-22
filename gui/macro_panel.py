@@ -23,8 +23,9 @@ logger = logging.getLogger(__name__)
 class MacroPanel(ttk.LabelFrame):
     """Panel for both local and external macro management and execution."""
     
-    def __init__(self, parent, macro_manager, local_macro_manager, comm=None):
+    def __init__(self, parent, macro_manager, local_macro_manager, comm=None, main_window=None):
         super().__init__(parent, text="Macros")
+        self.main_window = main_window
         self.macro_manager = macro_manager  # External macros
         self.local_macro_manager = local_macro_manager  # Local macros
         self.comm = comm  # Communication interface
@@ -1783,17 +1784,8 @@ class MacroPanel(ttk.LabelFrame):
     
     # Fallback: search up the widget hierarchy
     def _get_main_window(self):
-        parent = self.master
-        while parent:
-            # Check for any attribute that would identify the main window
-            if (hasattr(parent, 'code_editor') or 
-                hasattr(parent, 'debugger') or 
-                hasattr(parent, 'macro_manager')):
-                return parent
-            parent = parent.master
-            
-        print("Warning: Could not find main window")
-        return None
+        """Return the stored main_window reference."""
+        return self.main_window
 
 class LocalMacroEditDialog:
     """Dialog for creating/editing local macros."""
