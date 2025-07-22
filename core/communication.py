@@ -17,6 +17,7 @@ import threading
 import time
 import websocket
 import websocket._exceptions as ws_exceptions
+from datetime import datetime
 from queue import Queue, Empty
 from typing import Dict, Any, Optional, Callable, Union, List
 from urllib.parse import urlparse, urlunparse
@@ -711,61 +712,47 @@ class BBCtrlCommunicator:
         if not hasattr(self, '_main_thread_id'):
             print("[ERROR] _main_thread_id not set in _on_message")
             return
-            
+
         try:
             self.last_message_time = time.time()
-            
+
             # Skip empty messages
             if not message or not message.strip():
                 return
-                
-            # Log raw message for debugging
-            print(f"[DEBUG] Received message: {message}")
-            
+
             # Parse JSON message
             try:
                 data = json.loads(message)
-            except json.JSONDecodeError as e:
-                print(f"[WARNING] Received invalid JSON: {message}")
-                print(f"[WARNING] JSON decode error: {e}")
+            except json.JSONDecodeError:
+                # Not JSON, could be a simple text message
+                if self.message_callback:
+                    self._call_callback(self.message_callback, message)
                 return
-                
+
             # Check for error logs from the server
             if isinstance(data, dict) and 'log' in data and data['log'].get('level') == 'error':
                 error_msg = f"Controller error: {data['log'].get('msg', 'Unknown error')}"
-                print(f"[ERROR] {error_msg}")
-                self._call_callback(self.error_callback, error_msg)
+                if self.error_callback:
+                    self._call_callback(self.error_callback, error_msg)
                 return
                 
             # Update state
             self._update_state(data)
             
             # Only forward concise messages to the UI to avoid huge dumps that
-            # can crash Tk.  Skip full-state dicts; just show heartbeats.
-            if isinstance(data, dict):
-                if data.keys() == {'heartbeat'}:
-                    self._call_callback(self.message_callback,
-                                        f"Heartbeat: {data['heartbeat']}")
-            else:
-                # Non-dict messages (e.g. log strings) – pass through.
-                self._call_callback(self.message_callback, str(data))
+            # can crash Tk. Skip full-state dicts; just show heartbeats.
+            if isinstance(data, dict) and data.keys() == {'heartbeat'}:
+                if self.message_callback:
+                    self._call_callback(self.message_callback, 
+                                     f"Heartbeat: {data['heartbeat']}")
             
         except Exception as e:
             error_msg = f"Error processing WebSocket message: {e}"
             print(f"[ERROR] {error_msg}")
             import traceback
             traceback.print_exc()
-            self._call_callback(self.error_callback, error_msg)
-            
-            print("DEBUG: _on_message completed successfully")
-                    
-        except Exception as e:
-            error_msg = f"Critical error in _on_message: {str(e)}"
-            print(f"[CRITICAL] {error_msg}")
-            print(f"CRITICAL: {error_msg}")
-            import traceback
-            traceback.print_exc()
-            # Don't try to use callbacks here as they might be the source of the problem
+            if self.error_callback:
+                self._call_callback(self.error_callback, error_msg)
     
     def _update_state(self, data):
         """Update the internal state with new data from the controller."""
@@ -776,7 +763,8 @@ class BBCtrlCommunicator:
         self._merge_state(self.last_state, data)
         
         # Notify state change
-        self._call_callback(self.state_callback, self.last_state)
+        if self.state_callback:
+            self._call_callback(self.state_callback, self.last_state)
     
     def _merge_state(self, original, updates):
         """Recursively merge update data into the original state."""
@@ -883,21 +871,411 @@ class BBCtrlCommunicator:
         return (state.get('xx') in ['READY', 'HOLDING'] or 
                 state.get('cycle') in ['idle', 'mdi'])
     
-    def get_macros(self) -> Optional[Dict[str, Any]]:
-        """Fetch all macros from the controller via REST API.
+    # ---------------------------------------------------------------------
+    # Macro Management REST helpers
+    # ---------------------------------------------------------------------
+    def get_controller_time(self) -> Optional[datetime]:
+        """Return controller's current UTC time as datetime.
+        Tries /api/time (ISO string), falls back to HTTP Date header of a
+        simple GET. Returns None on failure."""
+        try:
+            # Try dedicated endpoint first
+            resp = requests.get(f"{self.base_url}/api/time", timeout=5)
+            if resp.status_code == 200:
+                return datetime.fromisoformat(resp.text.strip())
+        except Exception:
+            pass
+        try:
+            # Fallback: HEAD request to get Date header
+            resp = requests.head(self.base_url, timeout=5)
+            if "Date" in resp.headers:
+                from email.utils import parsedate_to_datetime
+                return parsedate_to_datetime(resp.headers["Date"]).astimezone(tz=None)
+        except Exception:
+            pass
+        return None
+
+    def upload_macro(self, name: str, macro_data: Dict[str, Any]) -> bool:
+        """Upload or update a macro on the controller."""
+        try:
+            resp = requests.put(
+                f"{self.base_url}/api/macros/{name}",
+                json=macro_data,
+                timeout=10,
+            )
+            return resp.status_code in (200, 201, 204)
+        except Exception as e:
+            self._call_callback(self.error_callback, f"Error uploading macro {name}: {e}")
+            return False
+
+    def delete_macro_on_controller(self, name: str) -> bool:
+        """Delete a macro by name on the controller."""
+        try:
+            resp = requests.delete(f"{self.base_url}/api/macros/{name}", timeout=10)
+            return resp.status_code in (200, 204)
+        except Exception as e:
+            self._call_callback(self.error_callback, f"Error deleting macro {name}: {e}")
+            return False
+
+    def _get_macro_description(self, path: str) -> str:
+        """Extract description from macro file content.
         
+        Args:
+            path: Path to the macro file on the controller
+            
         Returns:
-            Dict containing macro data if successful, None otherwise
+            Extracted description or empty string if not found
         """
         try:
-            response = requests.get(f'{self.base_url}/api/macros', timeout=10)
+            # Get the file content
+            url = f"{self.base_url}/api/fs/file/{requests.utils.quote(path)}"
+            response = requests.get(url, timeout=10)
+            
             if response.status_code == 200:
-                return response.json()
-            else:
-                self._call_callback(self.error_callback, 
-                                  f"Failed to fetch macros: HTTP {response.status_code}")
+                content = response.text
+                # Look for description in the first few lines (common patterns)
+                for line in content.split('\n')[:10]:
+                    line = line.strip()
+                    # Look for common comment patterns
+                    if line.startswith(';'):
+                        # Remove comment character and clean up
+                        desc = line[1:].strip()
+                        # Remove any trailing comments or special characters
+                        desc = desc.split(';')[0].strip()
+                        if desc:  # Return first non-empty comment line as description
+                            return desc
+                    elif ';' in line:  # Inline comment
+                        desc = line.split(';', 1)[1].strip()
+                        if desc:
+                            return desc
         except Exception as e:
-            self._call_callback(self.error_callback, f"Error fetching macros: {e}")
+            print(f"WARNING: Could not get description for {path}: {str(e)}")
+        
+        return ""  # Return empty string if no description found
+    
+    def _list_directory(self, path: str) -> List[Dict[str, Any]]:
+        """List contents of a directory on the controller.
+        
+        Args:
+            path: The directory path to list, relative to the controller's root
+            
+        Returns:
+            List of file/directory entries, or empty list on error
+        """
+        print(f"\n{'='*80}")
+        print(f"DEBUG: _list_directory('{path}')")
+        print(f"Thread: {threading.current_thread().name}")
+        print(f"Base URL: {self.base_url}")
+        print(f"Connected: {self.connected}")
+        
+        try:
+            # Ensure path is properly URL-encoded
+            encoded_path = requests.utils.quote(path)
+            url = f'{self.base_url}/api/fs/{encoded_path}'
+            print(f"DEBUG: Requesting URL: {url}")
+            
+            # Print request headers for debugging
+            headers = {}
+            print(f"DEBUG: Sending GET request to {url}")
+            
+            start_time = time.time()
+            response = requests.get(url, headers=headers, timeout=10)
+            elapsed = time.time() - start_time
+            
+            print(f"DEBUG: Response received in {elapsed:.2f} seconds")
+            print(f"DEBUG: Status code: {response.status_code}")
+            print(f"DEBUG: Response headers: {dict(response.headers)}")
+            
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                    files = data.get('files', [])
+                    print(f"DEBUG: Found {len(files)} items in {path}")
+                    
+                    # Log first few items for debugging
+                    for i, item in enumerate(files[:5]):
+                        print(f"  {i+1}. {item.get('name', 'unnamed')} (dir: {item.get('dir', False)})")
+                    if len(files) > 5:
+                        print(f"  ... and {len(files) - 5} more items")
+                        
+                    return files
+                except Exception as json_error:
+                    print(f"ERROR parsing JSON response: {str(json_error)}")
+                    print(f"Response content: {response.text[:500]}...")
+                    return []
+                
+            elif response.status_code == 404:
+                print(f"DEBUG: Directory not found: {path}")
+                print(f"Response content: {response.text}")
+                return []
+            else:
+                print(f"DEBUG: Unexpected status code {response.status_code}")
+                print(f"Response content: {response.text}")
+                print(f"WARNING: Failed to list directory {path}: {response.status_code}")
+                return []
+                
+        except requests.exceptions.RequestException as e:
+            print(f"ERROR: Network error listing directory {path}: {str(e)}")
+            return []
+            
+        except Exception as e:
+            print(f"ERROR: Unexpected error listing directory {path}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+    def _find_macros_recursive(self, path: str) -> Dict[str, Dict[str, Any]]:
+        """Recursively find all .gcode files in the given directory.
+        
+        Args:
+            path: The directory path to search, relative to the controller's root
+            
+        Returns:
+            Dictionary mapping macro names to their metadata with category and description
+        """
+        macros = {}
+        
+        try:
+            # Skip hidden directories (like .Trash)
+            if '/.' in path or path.startswith('.'):
+                print(f"DEBUG: Skipping hidden directory: {path}")
+                return macros
+                
+            print(f"DEBUG: Searching directory: {path}")
+            items = self._list_directory(path)
+            
+            # Determine category from path (last directory name)
+            category = 'uncategorized'
+            if '/' in path:
+                # Use the last directory as the category
+                category = path.split('/')[-1].lower()
+                # Clean up the category name
+                category = category.replace('_', ' ').title()
+            
+            for item in items:
+                try:
+                    item_name = item.get('name', '')
+                    if not item_name:
+                        continue
+                        
+                    # Skip hidden files/directories
+                    if item_name.startswith('.'):
+                        continue
+                        
+                    if item.get('dir', False):
+                        # Recursively search subdirectories
+                        subdir_path = f"{path}/{item_name}" if path else item_name
+                        macros.update(self._find_macros_recursive(subdir_path))
+                        
+                    elif item_name.lower().endswith('.gcode'):
+                        # Add macro to results
+                        macro_name = item_name[:-6]  # Remove .gcode extension
+                        full_path = f"{path}/{item_name}" if path else item_name
+                        
+                        # Try to get description from file content
+                        description = self._get_macro_description(full_path)
+                        
+                        # Skip if we already found this macro with the same or newer timestamp
+                        existing_macro = macros.get(macro_name)
+                        if existing_macro and 'modified' in item and 'modified' in existing_macro:
+                            if item['modified'] <= existing_macro['modified']:
+                                continue
+                        
+                        macros[macro_name] = {
+                            'name': macro_name,
+                            'category': category,
+                            'description': description,
+                            'modified': item.get('modified', 0),
+                            'size': item.get('size', 0),
+                            'path': full_path
+                        }
+                        print(f"DEBUG: Found macro: {macro_name} at {full_path} (Category: {category})")
+                        
+                except Exception as item_error:
+                    print(f"WARNING: Error processing item {item.get('name', 'unnamed')} in {path}: {str(item_error)}")
+                    continue
+                    
+        except Exception as e:
+            print(f"WARNING: Error searching {path}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+        return macros
+
+    def list_directory(self, path: str) -> List[Dict[str, Any]]:
+        """List contents of a directory on the controller.
+        
+        Args:
+            path: Path to list contents of (relative to controller root)
+            
+        Returns:
+            List of dictionaries containing file/directory info with keys:
+            - name: Name of the file/directory
+            - type: 'file' or 'directory'
+            - size: Size in bytes (for files)
+            - modified: Last modified timestamp (for files)
+            - path: Full path of the item
+        """
+        print(f"\n{'='*80}")
+        print(f"DEBUG: list_directory('{path}')")
+        print(f"Thread: {threading.current_thread().name}")
+        print(f"Connected: {self.connected}")
+        print(f"WebSocket: {self.ws is not None}")
+        
+        try:
+            # Handle root directory
+            if path in ['', '/', 'Home']:
+                print("DEBUG: Requesting root directory contents...")
+                items = self._list_directory('')
+                print(f"DEBUG: Got {len(items)} items from _list_directory('')")
+                
+                # Process items and add to result in a single pass
+                result = []
+                hidden_count = 0
+                
+                for item in items:
+                    name = item.get('name', '')
+                    if not name or name.startswith('.'):
+                        hidden_count += 1
+                        continue
+                        
+                    is_dir = item.get('dir', False)
+                    print(f"  - {name} (dir: {is_dir}, size: {item.get('size', 0)})")
+                    
+                    result.append({
+                        'name': name,
+                        'is_dir': is_dir,  # Add this line to match what the UI expects
+                        'type': 'directory' if is_dir else 'file',
+                        'size': item.get('size', 0),
+                        'modified': item.get('modified', 0),
+                        'path': name
+                    })
+                
+                print(f"DEBUG: Filtered out {hidden_count} hidden items, returning {len(result)} items")
+                print(f"First few items: {result[:3]}" if result else "No items to return")
+                
+                return result
+            
+            # Handle subdirectories
+            # Ensure path is properly formatted (no leading/trailing slashes)
+            path = path.strip('/')
+            
+            # Get directory contents from the controller
+            items = self._list_directory(path)
+            if not items:
+                return []
+            
+            # Format the results
+            result = []
+            for item in items:
+                name = item.get('name', '')
+                if not name or name.startswith('.'):
+                    continue
+                    
+                is_dir = item.get('dir', False)
+                full_path = f"{path}/{name}" if path else name
+                
+                result.append({
+                    'name': name,
+                    'is_dir': is_dir,  # Add this line to match root directory format
+                    'type': 'directory' if is_dir else 'file',
+                    'size': item.get('size', 0),
+                    'modified': item.get('modified', 0),
+                    'path': full_path
+                })
+            
+            return result
+            
+        except Exception as e:
+            print(f"ERROR: Failed to list directory {path}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return []
+            
+    def read_file(self, file_path: str) -> Optional[str]:
+        """Read the contents of a file from the controller.
+        
+        Args:
+            file_path: Path to the file to read (relative to controller root)
+            
+        Returns:
+            File contents as string, or None if the file could not be read
+        """
+        try:
+            # Ensure file_path is properly URL-encoded
+            encoded_path = requests.utils.quote(file_path)
+            url = f'{self.base_url}/api/fs/file/{encoded_path}'
+            print(f"DEBUG: Reading file: {url}")
+            
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                return response.text
+                
+            elif response.status_code == 404:
+                print(f"ERROR: File not found: {file_path}")
+                return None
+                
+            else:
+                error_msg = f"Failed to read file {file_path}: HTTP {response.status_code}"
+                print(f"ERROR: {error_msg}")
+                if response.text:
+                    print(f"Response body: {response.text[:500]}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            print(f"ERROR: Network error reading file {file_path}: {str(e)}")
+            return None
+            
+        except Exception as e:
+            print(f"ERROR: Unexpected error reading file {file_path}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None
+            
+    def get_macros(self) -> List[Dict[str, Any]]:
+        """Fetch all macros from the controller's file system via REST API.
+        
+        This method searches for all .gcode files in the Home directory and all its subdirectories.
+        
+        Returns:
+            List of macro objects with required attributes for the UI
+        """
+        try:
+            macro_dict = self._find_macros_recursive('Home')
+            macros = []
+            for macro_name, macro_data in macro_dict.items():
+                macro = type('Macro', (), {
+                    'name': macro_name,
+                    'category': macro_data.get('category', 'uncategorized'),
+                    'description': macro_data.get('description', ''),
+                    'path': macro_data.get('path', ''),
+                    'modified': macro_data.get('modified', 0),
+                    'size': macro_data.get('size', 0)
+                })
+                macros.append(macro)
+                
+            return macros
+            
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Request error fetching macros: {str(e)}"
+            print(f"ERROR: {error_msg}")
+            self._call_callback(self.error_callback, error_msg)
+            
+        except json.JSONDecodeError as e:
+            error_msg = f"Failed to parse directory listing JSON: {str(e)}"
+            print(f"ERROR: {error_msg}")
+            if 'response' in locals() and hasattr(response, 'text'):
+                print(f"Response content: {response.text[:500]}")
+            self._call_callback(self.error_callback, error_msg)
+            
+        except Exception as e:
+            error_msg = f"Unexpected error fetching macros: {str(e)}"
+            print(f"ERROR: {error_msg}")
+            import traceback
+            traceback.print_exc()
+            self._call_callback(self.error_callback, error_msg)
+            
         return None
     
     def close(self):

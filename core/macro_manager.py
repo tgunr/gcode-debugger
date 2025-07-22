@@ -7,9 +7,10 @@ Handles creation, storage, and execution of G-code macros.
 
 import os
 import json
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+from .config import get_config
 
 @dataclass
 class Macro:
@@ -324,6 +325,162 @@ class MacroManager:
             print(error_msg)
             return False
     
+    def sync_bidirectional(self, communicator, external_dir: Optional[str] = None, epsilon: float = 1.0) -> bool:
+        """Synchronise macros between the controller and a user-defined external
+        directory using a newest-wins strategy.
+
+        Steps:
+        1. Compute the clock offset between host and controller.
+        2. Build dictionaries of macros on controller and in ``external_dir``.
+        3. For each macro present in either location choose the newer copy
+           (after adjusting controller timestamps by the computed offset).
+        4. Upload newer local files or download newer remote macros.
+
+        Args:
+            communicator: BBCtrlCommunicator instance.
+            external_dir: Path to the external macros directory. If ``None`` the
+                          directory defined in the application configuration is
+                          used.
+            epsilon: Time difference (seconds) considered equal when comparing
+                     timestamps.
+        Returns:
+            True if synchronisation completed without fatal errors, otherwise
+            False.
+        """
+        try:
+            # ------------------------------------------------------------------
+            # 1. Determine external directory
+            # ------------------------------------------------------------------
+            if external_dir is None:
+                external_dir = get_config().get_external_macros_dir()
+            os.makedirs(external_dir, exist_ok=True)
+
+            # ------------------------------------------------------------------
+            # 1.1. Calculate controller-host clock offset
+            # ------------------------------------------------------------------
+            offset_sec: float = 0.0
+            ctrl_time = communicator.get_controller_time() if communicator else None
+            if ctrl_time:
+                host_time = datetime.utcnow().replace(tzinfo=timezone.utc)
+                offset_sec = (ctrl_time - host_time).total_seconds()
+                if abs(offset_sec) > 2:
+                    print(f"WARNING: Controller clock differs by {offset_sec:+.2f}s – compensating during sync")
+
+            # ------------------------------------------------------------------
+            # 2. Gather macro metadata from controller and external directory
+            # ------------------------------------------------------------------
+            controller_macros = communicator.get_macros() if communicator else {}
+            controller_macros = controller_macros or {}
+
+            # name -> (data, modified_dt)
+            ctrl_info: Dict[str, Tuple[Dict[str, Any], datetime]] = {}
+            for name, data in controller_macros.items():
+                mod_str = data.get("modified_date") or data.get("modifiedDate") or data.get("modified") or ""
+                try:
+                    mod_dt = datetime.fromisoformat(mod_str) if mod_str else datetime.utcnow()
+                except Exception:
+                    mod_dt = datetime.utcnow()
+                # compensate for offset so comparisons use host clock
+                mod_dt += timedelta(seconds=offset_sec)
+                ctrl_info[name] = (data, mod_dt)
+
+            # External directory macros
+            ext_info: Dict[str, Tuple[Dict[str, Any], datetime, str]] = {}
+            for fname in os.listdir(external_dir):
+                if not fname.endswith(".json"):
+                    continue
+                name = fname[:-5]
+                path = os.path.join(external_dir, fname)
+                try:
+                    with open(path, "r") as f:
+                        data = json.load(f)
+                    mod_str = data.get("modified_date", "")
+                    if mod_str:
+                        mod_dt = datetime.fromisoformat(mod_str)
+                    else:
+                        mod_dt = datetime.fromtimestamp(os.path.getmtime(path))
+                    ext_info[name] = (data, mod_dt, path)
+                except Exception as e:
+                    print(f"WARNING: Failed to read macro file {fname}: {e}")
+
+            # ------------------------------------------------------------------
+            # 3. Synchronise each macro based on timestamps
+            # ------------------------------------------------------------------
+            all_names = set(ctrl_info.keys()) | set(ext_info.keys())
+            for name in all_names:
+                ctrl_present = name in ctrl_info
+                ext_present = name in ext_info
+
+                if ctrl_present:
+                    ctrl_data, ctrl_dt = ctrl_info[name]
+                if ext_present:
+                    ext_data, ext_dt, ext_path = ext_info[name]
+
+                # Both present – compare timestamps
+                if ctrl_present and ext_present:
+                    diff = (ctrl_dt - ext_dt).total_seconds()
+                    if abs(diff) <= epsilon:
+                        # Same timestamp – nothing to do
+                        continue
+                    if diff > 0:
+                        # Controller has newer copy – write to external dir
+                        self._write_external_macro(name, ctrl_data, external_dir)
+                        self._create_or_update_local(ctrl_data)
+                    else:
+                        # External copy newer – upload
+                        communicator.upload_macro(name, ext_data)
+                        self._create_or_update_local(ext_data)
+                elif ctrl_present and not ext_present:
+                    # Only on controller – save externally
+                    self._write_external_macro(name, ctrl_data, external_dir)
+                    self._create_or_update_local(ctrl_data)
+                elif ext_present and not ctrl_present:
+                    # Only external – upload to controller
+                    communicator.upload_macro(name, ext_data)
+                    self._create_or_update_local(ext_data)
+
+            # Refresh in-memory macros from disk to ensure consistency
+            self.load_macros()
+            print("DEBUG: Bidirectional macro sync finished")
+            return True
+        except Exception as e:
+            import traceback
+            print(f"ERROR: sync_bidirectional failed: {e}\n{traceback.format_exc()}")
+            return False
+
+    def _write_external_macro(self, name: str, data: Dict[str, Any], external_dir: str) -> None:
+        """Write a macro JSON file to the external directory."""
+        path = os.path.join(external_dir, f"{name}.json")
+        try:
+            with open(path, "w") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            print(f"ERROR: Failed to write macro {name} to external dir: {e}")
+
+    def _create_or_update_local(self, data: Dict[str, Any]) -> None:
+        """Create or update the macro in the local manager storage."""
+        name = data.get("name")
+        if not name:
+            return
+        if name in self.macros:
+            self.update_macro(
+                name=name,
+                commands=data.get("commands", []),
+                description=data.get("description", ""),
+                category=data.get("category", "user"),
+                color=data.get("color", "#e6e6e6"),
+                hotkey=data.get("hotkey", "")
+            )
+        else:
+            self.create_macro(
+                name=name,
+                commands=data.get("commands", []),
+                description=data.get("description", ""),
+                category=data.get("category", "user"),
+                color=data.get("color", "#e6e6e6"),
+                hotkey=data.get("hotkey", "")
+            )
+
     def export_macro(self, name: str, filepath: str) -> bool:
         """Export a macro to a G-code file."""
         if name not in self.macros:

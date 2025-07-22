@@ -27,7 +27,7 @@ class ConfigManager:
                 "max_recent_files": 10,
             },
             "connection": {
-                "host": "bbctrl.polymicro.net",
+                "host": "10.1.1.111",
                 "port": 80,
                 "auto_connect": True,
                 "auto_reconnect": True,

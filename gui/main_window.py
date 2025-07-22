@@ -24,18 +24,40 @@ import threading
 class MainWindow:
     """Main window for the G-code debugger application."""
     
-    def __init__(self):
+    def __init__(self, host=None):
+        print("\n" + "="*80)
         print("MainWindow: __init__ starting")
+        print("Current thread:", threading.current_thread().name)
+        print("Main thread:", threading.main_thread().name)
+        
+        # Create the root window
+        print("\nCreating Tk root window...")
         self.root = tk.Tk()
-        print("MainWindow: after tk.Tk()")
+        print(f"Root window created. Window ID: {self.root.winfo_id()}")
+        print(f"Tk version: {self.root.tk.call('info', 'patchlevel')}")
+        print(f"Screen: {self.root.winfo_screenwidth()}x{self.root.winfo_screenheight()}")
+        
+        # Store main thread ID for thread-safe operations
         self._main_thread = threading.get_ident()
-        print("MainWindow: after threading.get_ident()")
+        print(f"Main thread ID: {self._main_thread}")
+        
+        # Configure window properties
+        print("\nConfiguring window properties...")
         self.root.title("G-Code Debugger - Buildbotics Controller")
-        print("MainWindow: after root.title")
+        print("Title set")
+        
+        # Set window size and center it
+        print("Setting window geometry...")
         self.root.geometry("1400x900")
-        # Center the window on the screen
         self._center_window()
-        print("MainWindow: after root.geometry")
+        print(f"Window geometry set to {self.root.geometry()}")
+        
+        # Test basic Tkinter functionality
+        print("\nTesting basic Tkinter functionality...")
+        test_label = tk.Label(self.root, text="Tkinter Test Label - Should be visible")
+        test_label.pack(pady=20)
+        self.root.update()
+        print("Test label created and packed")
         
         # Store reference to this MainWindow instance in the root for widget access
         self.root.main_window = self
@@ -45,7 +67,7 @@ class MainWindow:
         self.config = get_config()
         
         # Initialize core components with configured host and port
-        host = self.config.get('connection.host', 'bbctrl.polymicro.net')
+        host = host or self.config.get('connection.host', 'bbctrl.polymicro.net')
         port = self.config.get('connection.port', 80)
         self.communicator = BBCtrlCommunicator(
             host=host,
@@ -85,6 +107,18 @@ class MainWindow:
         self._setup_main_layout()
         self._setup_status_bar()
         self._setup_callbacks()
+
+        # Initial macro synchronisation to ensure UI matches controller
+        try:
+            if hasattr(self.macro_manager, "sync_bidirectional"):
+                print("DEBUG: Performing initial macro sync ...")
+                self.macro_manager.sync_bidirectional(self.communicator)
+        except Exception as e:
+            print(f"WARNING: Initial macro sync failed: {e}")
+
+        # Refresh macro lists after sync
+        if hasattr(self, "macro_panel"):
+            self.macro_panel.refresh_macro_lists()
         self._setup_keyboard_shortcuts()
         
         # Initialize connection
@@ -341,17 +375,25 @@ class MainWindow:
     
     def _setup_main_layout(self):
         """Setup the main application layout."""
+        print("\nSetting up main layout...")
+        
         # Create main paned window
+        print("  Creating main paned window...")
         main_paned = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
         main_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        print("  Main paned window created and packed")
         
         # Left panel (code editor)
+        print("  Creating left panel...")
         left_frame = ttk.Frame(main_paned)
         main_paned.add(left_frame, weight=3)
+        print("  Left panel created and added to main paned window")
         
         # Right panel (controls and macros)
+        print("  Creating right panel...")
         right_paned = ttk.PanedWindow(main_paned, orient=tk.VERTICAL)
         main_paned.add(right_paned, weight=3)  # Increased weight to give more space to the right panel
+        print("  Right panel created and added to main paned window")
         
         # Setup left panel (code editor)
         self.code_editor = CodeEditor(left_frame)
@@ -369,7 +411,13 @@ class MainWindow:
         macro_frame = ttk.Frame(right_paned)
         right_paned.add(macro_frame, weight=4)  # Increased weight to give more space to macros
         
-        self.macro_panel = MacroPanel(macro_frame, self.macro_manager, self.local_macro_manager)
+        # Pass the communicator to MacroPanel for controller communication
+        self.macro_panel = MacroPanel(
+            macro_frame, 
+            self.macro_manager, 
+            self.local_macro_manager,
+            comm=self.communicator  # Pass the communicator
+        )
         self.macro_panel.pack(fill=tk.BOTH, expand=True)
         
         # Setup right panel bottom (MDI + console)
@@ -1094,9 +1142,36 @@ Built for Buildbotics LLC
     
     def run(self):
         """Run the application."""
-        print("Mainloop starting")
-        self.root.mainloop()
-        print("Mainloop ended")
+        print("\n" + "="*80)
+        print("Starting main application loop...")
+        print(f"Current thread: {threading.current_thread().name}")
+        print(f"Main thread: {threading.main_thread().name}")
+        print(f"Is main thread: {threading.current_thread() == threading.main_thread()}")
+        
+        # Force an update of all pending GUI operations
+        print("\nUpdating pending GUI operations...")
+        self.root.update()
+        print("GUI update complete")
+        
+        # Make sure the window is visible
+        print("\nEnsuring window is visible...")
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+        print("Window visibility ensured")
+        
+        # Start the main event loop
+        print("\nStarting main event loop...")
+        try:
+            self.root.mainloop()
+            print("Main event loop ended normally")
+        except Exception as e:
+            print(f"ERROR in main event loop: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+        finally:
+            print("Application shutdown complete")
 
 if __name__ == "__main__":
     app = MainWindow()

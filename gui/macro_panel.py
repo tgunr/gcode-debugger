@@ -470,18 +470,11 @@ class MacroPanel(ttk.LabelFrame):
         print(f"\n{'='*80}")
         print(f"DEBUG: _load_directory('{path}')")
         print(f"Thread: {threading.current_thread().name}")
-        print(f"PID: {os.getpid()}")
-        print(f"Has comm: {hasattr(self, 'comm')}")
-        print(f"Has tree: {hasattr(self, 'tree')}")
-        print(f"Has after: {hasattr(self, 'after')}")
         
         # Ensure path is a string and not empty
         if not isinstance(path, str) or not path.strip():
             print(f"ERROR: Invalid path provided: {path}")
             return
-            
-        print(f"CWD: {os.getcwd()}")
-        print(f"Has comm: {hasattr(self, 'comm')}")
         
         # Store the current path
         self.current_path = path
@@ -495,759 +488,326 @@ class MacroPanel(ttk.LabelFrame):
         if not self.path_history or (self.path_history and self.path_history[-1] != path):
             self.path_history.append(path)
             print(f"DEBUG: Added to path_history: {path}")
+        
+        # Update path display
+        if hasattr(self, 'path_var'):
+            self.path_var.set(f"Path: {path}")
             
-        # Update navigation buttons if the method exists
+        # Update navigation buttons
         if hasattr(self, '_update_navigation_buttons'):
-            print("DEBUG: Updating navigation buttons")
-            if hasattr(self, 'after') and callable(self.after):
-                self.after(0, self._update_navigation_buttons)
-            else:
-                self._update_navigation_buttons()
-                
+            self._update_navigation_buttons()
+        
         # Clear the treeview first
-        clear_result = self._safe_clear_treeview()
-        print(f"DEBUG: _safe_clear_treeview() returned: {clear_result}")
-        if not clear_result:
+        if not self._safe_clear_treeview():
             error_msg = "Failed to clear treeview before loading directory"
             print(f"ERROR: {error_msg}")
-            if hasattr(self, 'after') and callable(self.after):
-                self.after(0, lambda: self._show_error_in_ui(None, error_msg))
-            else:
-                self._show_error_in_ui(None, error_msg)
+            self._show_error_in_ui(None, error_msg)
             return
-            
-        # Add a loading indicator
-        loading_id = [None]  # Use a list to allow modification in nested functions
         
-        def add_loading_indicator():
-            """Add a loading indicator to the treeview."""
-            try:
-                print("DEBUG: Adding loading indicator to treeview")
-                loading_id[0] = self.tree.insert('', 'end', text='Loading...', values=('', ''), tags=('loading',))
-                self.tree.see(loading_id[0])  # Ensure the loading indicator is visible
-                self.tree.update()
-                print(f"DEBUG: Loading indicator added with ID: {loading_id[0]}")
-            except Exception as e:
-                print(f"ERROR adding loading indicator: {str(e)}")
-                import traceback
-                traceback.print_exc()
+        # Add loading indicator
+        loading_id = self.tree.insert('', 'end', text='Loading...', values=('', ''), tags=('loading',))
+        self.tree.see(loading_id)
+        self.tree.update()
+        print(f"DEBUG: Loading indicator added with ID: {loading_id}")
         
-        # Add loading indicator in a thread-safe way
-        if threading.current_thread() is threading.main_thread():
-            add_loading_indicator()
-        else:
-            if hasattr(self, 'after') and callable(self.after):
-                print("DEBUG: Scheduling loading indicator on main thread")
-                self.after(0, add_loading_indicator)
-        
-        # Define a helper function to safely update the UI from any thread
+        # Define thread-safe UI update helper
         def safe_update_ui(callback, *args):
             """Safely execute a UI update on the main thread"""
             try:
+                # If already on main thread, execute directly
                 if threading.current_thread() is threading.main_thread():
-                    # If we're already on the main thread, execute directly
-                    return callback(*args)
-                elif hasattr(self, 'after') and callable(self.after):
-                    # Schedule on main thread - return None for async operation
-                    self.after(0, lambda: safe_update_ui(callback, *args))
-                    return None
-                else:
+                    try:
+                        return callback(*args)
+                    except Exception as e:
+                        print(f"ERROR executing callback on main thread: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
+                        return None
+                
+                # Check if widget is still valid before scheduling
+                if not hasattr(self, 'after') or not callable(self.after):
                     print("WARNING: Cannot update UI - no valid after method")
                     return None
+                
+                try:
+                    # Check if widget still exists
+                    if hasattr(self, 'winfo_exists') and not self.winfo_exists():
+                        print("WARNING: Widget no longer exists, cannot update UI")
+                        return None
+                except Exception as check_error:
+                    print(f"WARNING: Cannot verify widget state: {str(check_error)}")
+                
+                # Create a thread-safe callback wrapper with no external references
+                def delayed_callback():
+                    try:
+                        # Double-check we're on main thread
+                        if not threading.current_thread() is threading.main_thread():
+                            print("ERROR: delayed_callback not on main thread")
+                            return
+                        
+                        # Execute the callback
+                        callback(*args)
+                        
+                    except Exception as e:
+                        print(f"ERROR in delayed_callback: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
+                
+                # Schedule on main thread with immediate execution (after 1ms)
+                try:
+                    self.after(1, delayed_callback)
+                    return None
+                except Exception as schedule_error:
+                    print(f"ERROR scheduling UI update: {str(schedule_error)}")
+                    return None
+                    
             except Exception as e:
                 print(f"ERROR in safe_update_ui: {str(e)}")
-                return None
                 import traceback
                 traceback.print_exc()
+                return None
         
-        # Define a function to update the UI with an error message
+        # Define error display helper
         def update_ui_with_error(message):
             """Update the UI to show an error message"""
             print(f"ERROR: {message}")
             
             def _show_error():
                 try:
-                    # Clear the treeview
-                    self._safe_clear_treeview()
-                    # Show error message
-                    self.tree.insert('', 'end', text=f'Error: {message}', values=('', ''), tags=('error',))
-                    # Configure error tag
-                    self.tree.tag_configure('error', foreground='red')
+                    # Clean up loading indicator first
+                    try:
+                        if hasattr(self, 'tree') and self.tree is not None:
+                            children = self.tree.get_children()
+                            for child in children:
+                                tags = self.tree.item(child, 'tags')
+                                if 'loading' in tags:
+                                    self.tree.delete(child)
+                                    print(f"DEBUG: Removed loading indicator: {child}")
+                    except Exception as cleanup_error:
+                        print(f"WARNING: Failed to clean up loading indicator: {str(cleanup_error)}")
+                    
+                    # Clear treeview safely
+                    if not self._safe_clear_treeview():
+                        print("WARNING: Failed to clear treeview for error display")
+                    
+                    # Add error message
+                    if hasattr(self, 'tree') and self.tree is not None:
+                        error_id = self.tree.insert('', 'end', text=f'Error: {message}', values=('', ''), tags=('error',))
+                        self.tree.tag_configure('error', foreground='red')
+                        print(f"DEBUG: Error message added with ID: {error_id}")
                 except Exception as e:
-                    print(f"ERROR in update_ui_with_error: {str(e)}")
+                    print(f"ERROR in _show_error: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
             
-            safe_update_ui(_show_error)
+            # Call error display on main thread
+            if threading.current_thread() is threading.main_thread():
+                _show_error()
+            else:
+                safe_update_ui(_show_error)
         
-        # Define the main directory loading function
-        def load_directory():
-            """Load directory contents and update the UI"""
+        # Main directory loading function
+        def load_directory_async():
             try:
-                print(f"DEBUG: Loading directory: {path}")
+                print(f"DEBUG: load_directory_async() starting for path: {path}")
                 
-                # Check if we have a communication object
+                # Check communication interface
                 if not hasattr(self, 'comm') or self.comm is None:
-                    update_ui_with_error("No communication interface available")
+                    update_ui_with_error("Controller communication interface is not available")
                     return
                 
-                # Get the directory listing
+                # Verify controller connection
+                if not hasattr(self.comm, 'connected') or not self.comm.connected:
+                    update_ui_with_error("Not connected to controller. Please check connection and try again.")
+                    return
+                
+                # Check if list_directory method is available
+                if not hasattr(self.comm, 'list_directory') or not callable(self.comm.list_directory):
+                    update_ui_with_error("Controller interface does not support directory listing")
+                    return
+                
+                # Get directory listing
                 try:
                     print(f"DEBUG: Requesting directory listing for: {path}")
                     listing = self.comm.list_directory(path)
-                    print(f"DEBUG: Received listing: {listing}")
+                    print(f"DEBUG: Received {len(listing) if listing else 0} items")
                     
+                    if listing is None:
+                        update_ui_with_error("Received None response from list_directory")
+                        return
+                        
                     if not isinstance(listing, (list, tuple)):
-                        update_ui_with_error(f"Invalid response from controller: {type(listing).__name__}")
+                        update_ui_with_error(f"Invalid response type from controller. Expected list/tuple, got {type(listing).__name__}")
                         return
                     
-                    # Update the UI with the directory contents
-                    def update_ui():
+                    # Define function to update UI with the listing - THIS IS THE CORRECT CALLBACK
+                    def update_ui_with_listing():
                         try:
-                            # Clear the treeview
+                            print(f"DEBUG: Updating UI with directory listing ({len(listing)} items)")
+                            
+                            # Validate widget state before proceeding
+                            if not hasattr(self, 'tree') or self.tree is None:
+                                print("ERROR: Treeview widget is not available")
+                                return False
+                            
+                            # Verify we're on the main thread
+                            if not threading.current_thread() is threading.main_thread():
+                                print("ERROR: update_ui_with_listing called from background thread")
+                                return False
+                            
+                            # Clear existing items
                             if not self._safe_clear_treeview():
-                                print("WARNING: Failed to clear treeview before update")
+                                print("WARNING: Failed to clear treeview before updating")
+                                return False
                             
-                            # Add parent directory reference if not at root
+                            # Add parent directory reference (..) if not at root
                             if path != 'Home':
-                                parent_path = '/'.join(path.split('/')[:-1]) if '/' in path else 'Home'
-                                item_id = self.tree.insert(
-                                    '', 'end',
-                                    text='..',
-                                    values=('', ''),
-                                    tags=('directory', parent_path)
-                                )
-                                self.tree.item(item_id, image=self.folder_icon)
-                            
-                            # Add each item to the treeview
-                            for item in listing:
                                 try:
-                                    name = item.get('name', 'unnamed')
-                                    is_dir = item.get('is_dir', False)
-                                    size = item.get('size', 0)
-                                    modified = item.get('modified', 0)
-                                    full_path = item.get('path', '')
-                                    
-                                    # Skip hidden files and directories
-                                    if name.startswith('.'):
-                                        continue
-                                    
-                                    # Format the size
-                                    size_str = self._format_size(size) if not is_dir else ''
-                                    
-                                    # Format the modification time
-                                    modified_str = ''
-                                    if modified > 0:
-                                        try:
-                                            modified_str = datetime.fromtimestamp(modified).strftime('%Y-%m-%d %H:%M:%S')
-                                        except:
-                                            modified_str = str(modified)
-                                    
-                                    # Insert the item
+                                    parent_path = '/'.join(path.split('/')[:-1]) if '/' in path else 'Home'
                                     item_id = self.tree.insert(
                                         '', 'end',
-                                        text=name,
-                                        values=(size_str, modified_str),
-                                        tags=('directory' if is_dir else 'file', full_path)
+                                        text='..',
+                                        values=('', ''),
+                                        tags=('directory', parent_path)
                                     )
-                                    
-                                    # Set the appropriate icon
-                                    icon = self.folder_icon if is_dir else self.file_icon
-                                    self.tree.item(item_id, image=icon)
-                                    
+                                    if hasattr(self, 'folder_icon') and self.folder_icon is not None:
+                                        self.tree.item(item_id, image=self.folder_icon)
+                                    print(f"DEBUG: Added parent directory reference")
                                 except Exception as e:
-                                    print(f"WARNING: Failed to add item to treeview: {str(e)}")
-                                    import traceback
-                                    traceback.print_exc()
+                                    print(f"WARNING: Failed to add parent directory reference: {str(e)}")
                             
-                            # Update button states
-                            if hasattr(self, '_update_external_button_states'):
-                                self._update_external_button_states()
-                            
-                            # Update navigation buttons
-                            if hasattr(self, '_update_navigation_buttons'):
-                                self._update_navigation_buttons()
-                            
-                        except Exception as e:
-                            print(f"ERROR in update_ui: {str(e)}")
-                            import traceback
-                            traceback.print_exc()
-                            update_ui_with_error(f"Failed to update UI: {str(e)}")
-                    
-                    # Update the UI on the main thread
-                    safe_update_ui(update_ui)
-                    
-                except Exception as e:
-                    error_msg = f"Failed to list directory: {str(e)}"
-                    print(f"ERROR: {error_msg}")
-                    import traceback
-                    traceback.print_exc()
-                    update_ui_with_error(error_msg)
-                
-            except Exception as e:
-                error_msg = f"Unexpected error in load_directory: {str(e)}"
-                print(f"CRITICAL: {error_msg}")
-                import traceback
-                traceback.print_exc()
-                update_ui_with_error(error_msg)
-        
-        # Start loading the directory in a separate thread
-        print("DEBUG: Starting directory load in background thread")
-        threading.Thread(target=load_directory, daemon=True).start()
-        
-        # Initialize loading_id at function scope so it's accessible in the finally block
-        loading_id = None
-        
-        # Function to clear the treeview safely
-        def clear_treeview():
-            try:
-                children = self.tree.get_children()
-                print(f"Found {len(children)} items to clear")
-                for item in children:
-                    self.tree.delete(item)
-                print("Treeview cleared")
-                return True
-            except Exception as e:
-                print(f"ERROR clearing treeview: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                return False
-        
-        # Function to add loading indicator safely
-        def add_loading_indicator():
-            try:
-                nonlocal loading_id
-                loading_id = self.tree.insert('', 'end', text='Loading...', values=('', ''), tags=('loading',))
-                self.tree.see(loading_id)  # Ensure the loading indicator is visible
-                self.tree.update()
-                print(f"Loading indicator added with ID: {loading_id}")
-                return loading_id
-            except Exception as e:
-                print(f"ERROR adding loading indicator: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                return None
-        
-        try:
-            # Save the current path
-            try:
-                self.current_path = path
-                safe_update_ui(lambda: self.path_var.set(f"Path: {path}"))
-                print(f"Path set to: {path}")
-            except Exception as e:
-                print(f"ERROR setting path: {str(e)}")
-                raise  # Re-raise to be caught by outer try/except
-            
-            # Clear the treeview on the main thread
-            print("DEBUG: Clearing treeview...")
-            if not safe_update_ui(clear_treeview):
-                raise RuntimeError("Failed to clear treeview")
-            
-            # Add loading indicator on the main thread
-            print("DEBUG: Adding loading indicator...")
-            loading_id = safe_update_ui(add_loading_indicator)
-            if loading_id is None:
-                raise RuntimeError("Failed to add loading indicator")
-                
-        except Exception as e:
-            error_msg = f"ERROR in _load_directory: {str(e)}"
-            print(error_msg)
-            import traceback
-            traceback.print_exc()
-            
-            # Update UI with error on the main thread
-            safe_update_ui(
-                lambda: self.tree.insert('', 'end', text=f"Error: {str(e)}", values=('', ''), tags=('error',))
-            )
-            return
-        
-        # Get directory contents in a background thread to avoid freezing the UI
-        def load_directory_async():
-            try:
-                print(f"\n{'='*80}")
-                print(f"DEBUG: load_directory_async()")
-                print(f"Path: {path}")
-                print(f"Thread: {threading.current_thread().name}")
-                print(f"Has self.comm: {hasattr(self, 'comm')}")
-                print(f"Tree widget exists: 'tree' in dir(self) and self.tree is not None")
-                print(f"After flag: {hasattr(self, 'after')}")
-                
-                # Set a timeout for the entire operation
-                timeout_seconds = 10  # 10 second timeout
-                start_time = time.time()
-                
-                # Define a function to check if we've exceeded the timeout
-                def check_timeout():
-                    elapsed = time.time() - start_time
-                    if elapsed > timeout_seconds:
-                        error_msg = "Operation timed out. The controller may be unreachable."
-                        print(f"TIMEOUT: {error_msg}")
-                        update_ui_with_error(error_msg)
-                        return True
-                    return False
-                
-                # Check if we have a valid loading_id
-                if loading_id is None:
-                    error_msg = "No valid loading_id provided"
-                    print(f"ERROR: {error_msg}")
-                    update_ui_with_error(f"Failed to initialize: {error_msg}")
-                    return
-                
-                # Make a local copy of the comm object to prevent race conditions
-                try:
-                    comm = getattr(self, 'comm', None)
-                    if comm is None:
-                        error_msg = "Controller communication interface is not available"
-                        print(f"ERROR: {error_msg}")
-                        update_ui_with_error(error_msg)
-                        return
-                        
-                    # Verify controller connection
-                    if not hasattr(comm, 'connected') or not comm.connected:
-                        error_msg = "Not connected to controller. Please check connection and try again."
-                        print(f"ERROR: {error_msg}")
-                        update_ui_with_error(error_msg)
-                        return
-                        
-                    # Check if list_directory method is available
-                    if not hasattr(comm, 'list_directory') or not callable(comm.list_directory):
-                        error_msg = "Controller interface does not support directory listing"
-                        print(f"ERROR: {error_msg}")
-                        update_ui_with_error(error_msg)
-                        return
-                        
-                except Exception as comm_error:
-                    error_msg = f"Error initializing controller communication: {str(comm_error)}"
-                    print(f"ERROR: {error_msg}")
-                    import traceback
-                    traceback.print_exc()
-                    update_ui_with_error("Failed to communicate with controller. Please check the connection.")
-                    return
-                    
-                # Check timeout before proceeding
-                if check_timeout():
-                    return
-                    
-                # Make sure the treeview is still valid
-                if not hasattr(self, 'tree') or self.tree is None:
-                    error_msg = "Treeview widget is no longer available"
-                    print(f"ERROR: {error_msg}")
-                    update_ui_with_error(error_msg)
-                    return
-                    
-                # At this point, we have a valid comm object and treeview
-                # Now try to list the directory contents
-                try:
-                    print(f"DEBUG: Attempting to list directory: {path}")
-                    
-                    # Call the list_directory method with a timeout
-                    print(f"DEBUG: Checking timeout before listing directory")
-                    if check_timeout():
-                        print("DEBUG: Directory listing timed out")
-                        return
-                        
-                    # Get directory listing
-                    try:
-                        print(f"DEBUG: Attempting to list directory: {path}")
-                        print(f"DEBUG: comm object type: {type(comm).__name__}")
-                        print(f"DEBUG: comm.list_directory type: {'Callable' if callable(getattr(comm, 'list_directory', None)) else 'Not callable'}")
-                        
-                        # Debug comm object attributes
-                        print("DEBUG: comm object attributes:", dir(comm))
-                        
-                        listing = comm.list_directory(path)
-                        print(f"DEBUG: Received directory listing (type: {type(listing).__name__}, length: {len(listing) if hasattr(listing, '__len__') else 'N/A'})")
-                        
-                        if listing is None:
-                            error_msg = "Received None response from list_directory"
-                            print(f"ERROR: {error_msg}")
-                            update_ui_with_error(error_msg)
-                            return
-                            
-                        # Check if we got a valid response
-                        if not isinstance(listing, (list, tuple)):
-                            error_msg = f"Invalid response type from controller. Expected list/tuple, got {type(listing).__name__}"
-                            print(f"ERROR: {error_msg}")
-                            print(f"DEBUG: Listing content: {listing}")
-                            update_ui_with_error(error_msg)
-                            return
-                            
-                        print(f"DEBUG: Directory listing contains {len(listing)} items")
-                        if listing:
-                            print(f"DEBUG: First item in listing: {listing[0]}")
-                        else:
-                            print("DEBUG: Directory listing is empty")
-                        
-                        # Define function to update UI with the listing
-                        def update_ui_with_listing():
-                            success = False
-                            try:
-                                print(f"DEBUG: Updating UI with directory listing ({len(listing)} items)")
-                                
-                                # Clear existing items using our safe method
-                                if not self._safe_clear_treeview():
-                                    error_msg = "Failed to clear treeview before updating"
-                                    print(f"WARNING: {error_msg}")
-                                    self._show_error_in_ui(loading_id, error_msg)
-                                    return False
-                                
-                                # Add parent directory reference (..) if not at root
-                                if path != 'Home':
-                                    try:
-                                        parent_path = '/'.join(path.split('/')[:-1]) if '/' in path else 'Home'
-                                        item_id = self.tree.insert(
-                                            '', 'end',
-                                            text='..',
-                                            values=('', ''),
-                                            tags=('directory', parent_path)
-                                        )
-                                        # Set the image after insertion to ensure it's displayed
-                                        if hasattr(self, 'folder_icon'):
-                                            self.tree.item(item_id, image=self.folder_icon)
-                                    except Exception as e:
-                                        print(f"WARNING: Failed to add parent directory reference: {str(e)}")
-                                
-                                # Add directory contents to treeview
-                                items_added = 0
-                                for item in listing:
-                                    if not item or not isinstance(item, dict):
-                                        print(f"WARNING: Skipping invalid item: {item}")
+                            # Add directory contents to treeview
+                            items_added = 0
+                            for item in listing:
+                                if not item or not isinstance(item, dict):
+                                    continue
+                                    
+                                try:
+                                    # Extract and validate item properties
+                                    name = str(item.get('name', 'Unknown')).strip()
+                                    if not name or name.startswith('.'):  # Skip empty or hidden
                                         continue
                                         
+                                    is_dir = bool(item.get('is_dir', False))
                                     try:
-                                        # Get item properties with type conversion and defaults
-                                        name = str(item.get('name', 'Unknown')).strip()
-                                        if not name:  # Skip empty names
-                                            print("WARNING: Skipping item with empty name")
-                                            continue
-                                            
-                                        is_dir = bool(item.get('is_dir', False))
+                                        size = int(item.get('size', 0))
+                                    except (ValueError, TypeError):
+                                        size = 0
+                                        
+                                    modified = str(item.get('modified', '')).strip()
+                                    full_path = f"{path}/{name}" if path != 'Home' else name
+                                    
+                                    # Validate tree widget before each insertion
+                                    if not hasattr(self, 'tree') or self.tree is None:
+                                        print("ERROR: Treeview widget became unavailable during update")
+                                        break
+                                    
+                                    # Determine icon safely
+                                    icon = None
+                                    try:
+                                        if is_dir:
+                                            icon = getattr(self, 'folder_icon', None)
+                                        elif name.lower().endswith(('.gcode', '.nc', '.ngc', '.tap', '.gc')):
+                                            icon = getattr(self, 'macro_icon', None)
+                                        else:
+                                            icon = getattr(self, 'file_icon', None)
+                                    except Exception as icon_error:
+                                        print(f"WARNING: Error getting icon for {name}: {str(icon_error)}")
+                                        icon = None
+                                    
+                                    # Format size for display
+                                    size_display = ''
+                                    if not is_dir:
                                         try:
-                                            size = int(item.get('size', 0))
-                                        except (ValueError, TypeError):
-                                            size = 0
-                                            
-                                        modified = str(item.get('modified', '')).strip()
-                                        full_path = f"{path}/{name}" if path != 'Home' else name
+                                            size_display = self._format_size(size)
+                                        except Exception as size_error:
+                                            print(f"WARNING: Error formatting size for {name}: {str(size_error)}")
+                                            size_display = str(size)
+                                    
+                                    # Insert the item safely
+                                    try:
+                                        item_id = self.tree.insert(
+                                            '', 'end',
+                                            text=name,
+                                            values=(size_display, modified),
+                                            tags=('directory' if is_dir else 'file', full_path)
+                                        )
                                         
-                                        # Skip hidden files/directories
-                                        if name.startswith('.'):
-                                            continue
+                                        # Set the image if available
+                                        if icon is not None:
+                                            self.tree.item(item_id, image=icon)
                                         
-                                        # Insert into treeview
-                                        if hasattr(self, 'tree') and self.tree is not None:
-                                            try:
-                                                # Determine icon to use
-                                                icon = None
-                                                if is_dir:
-                                                    icon = getattr(self, 'folder_icon', None)
-                                                elif name.lower().endswith(('.gcode', '.nc', '.ngc', '.tap', '.gc')):
-                                                    icon = getattr(self, 'macro_icon', None)
-                                                else:
-                                                    icon = getattr(self, 'file_icon', None)
-                                                
-                                                # Format size for display
-                                                size_display = self._format_size(size) if not is_dir else ''
-                                                
-                                                # Insert the item
-                                                item_id = self.tree.insert(
-                                                    '', 'end',
-                                                    text=name,
-                                                    values=(size_display, modified),
-                                                    tags=('directory' if is_dir else 'file', full_path)
-                                                )
-                                                
-                                                # Set the image if available
-                                                if icon is not None:
-                                                    self.tree.item(item_id, image=icon)
-                                                
-                                                items_added += 1
-                                                print(f"DEBUG: Added item to tree: {name} (dir: {is_dir}, size: {size})")
-                                                
-                                            except Exception as e:
-                                                print(f"ERROR adding item {name} to treeview: {str(e)}")
-                                                import traceback
-                                                traceback.print_exc()
-                                                continue
+                                        items_added += 1
                                         
-                                    except Exception as e:
-                                        print(f"ERROR processing item {item}: {str(e)}")
+                                    except Exception as insert_error:
+                                        print(f"ERROR inserting item {name} to treeview: {str(insert_error)}")
                                         import traceback
                                         traceback.print_exc()
                                         continue
-                                
-                                # Update UI state
-                                try:
-                                    self.current_path = path
-                                    if hasattr(self, 'path_var'):
-                                        self.path_var.set(f"Path: {path}")
-                                    
-                                    # Update navigation buttons
-                                    if hasattr(self, '_update_navigation_buttons'):
-                                        self._update_navigation_buttons()
-                                    
-                                    # Update button states
-                                    if hasattr(self, '_update_external_button_states'):
-                                        self._update_external_button_states()
-                                    
-                                    print(f"DEBUG: Successfully updated directory listing. Added {items_added} items.")
-                                    success = True
-                                    
-                                except Exception as e:
-                                    error_msg = f"Error updating UI state: {str(e)}"
-                                    print(f"ERROR: {error_msg}")
+                                        
+                                except Exception as item_error:
+                                    print(f"ERROR processing item {item.get('name', 'unknown')}: {str(item_error)}")
                                     import traceback
                                     traceback.print_exc()
-                                    self._show_error_in_ui(loading_id, error_msg)
-                                    return False
+                                    continue
+                            
+                            # Update UI state safely
+                            try:
+                                self.current_path = path
+                                if hasattr(self, 'path_var') and self.path_var is not None:
+                                    self.path_var.set(f"Path: {path}")
                                 
-                            except Exception as e:
-                                error_msg = f"Error updating UI with directory listing: {str(e)}"
-                                print(f"ERROR: {error_msg}")
+                                # Update navigation buttons
+                                if hasattr(self, '_update_navigation_buttons') and callable(self._update_navigation_buttons):
+                                    self._update_navigation_buttons()
+                                
+                                # Update button states
+                                if hasattr(self, '_update_external_button_states') and callable(self._update_external_button_states):
+                                    self._update_external_button_states()
+                                    
+                            except Exception as state_error:
+                                print(f"WARNING: Error updating UI state: {str(state_error)}")
                                 import traceback
                                 traceback.print_exc()
-                                self._show_error_in_ui(loading_id, error_msg)
-                                return False
                             
-                            # If we got here, everything was successful
-                            if success and hasattr(self, 'tree') and self.tree is not None:
-                                try:
-                                    self.tree.delete(loading_id)
-                                except Exception as e:
-                                    print(f"WARNING: Failed to remove loading indicator: {str(e)}")
+                            print(f"DEBUG: Successfully updated directory listing. Added {items_added} items.")
+                            return True
                             
-                            return success
-                        
-                        # Update the UI with the listing on the main thread
-                        safe_update_ui(update_ui_with_listing)
-                        
-                    except Exception as e:
-                        error_msg = f"Error listing directory: {str(e)}"
-                        print(f"ERROR: {error_msg}")
-                        import traceback
-                        traceback.print_exc()
-                        update_ui_with_error(error_msg)
-                        return
-                        update_ui_with_error("Failed to list directory contents. The controller may be unreachable.")
-                        
-                except Exception as e:
-                    error_msg = f"Unexpected error in load_directory_async: {str(e)}"
-                    print(f"ERROR: {error_msg}")
-                    import traceback
-                    traceback.print_exc()
-                    update_ui_with_error("An unexpected error occurred while loading the directory.")
+                        except Exception as e:
+                            print(f"ERROR in update_ui_with_listing: {str(e)}")
+                            import traceback
+                            traceback.print_exc()
+                            # Try to show error in UI if possible
+                            try:
+                                if hasattr(self, 'tree') and self.tree is not None:
+                                    self._safe_clear_treeview()
+                                    error_id = self.tree.insert('', 'end', text=f'Error updating UI: {str(e)}', values=('', ''), tags=('error',))
+                                    self.tree.tag_configure('error', foreground='red')
+                            except Exception as ui_error:
+                                print(f"ERROR: Could not display error in UI: {str(ui_error)}")
+                            return False
                     
-            except Exception as e:
-                print(f"ERROR in load_directory_async initialization: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                return
-            
-            # Check if we can update the UI from this thread
-            try:
-                self.after(100, lambda: print("DEBUG: UI update test from background thread successful"))
-                print("DEBUG: Successfully scheduled UI update test")
-            except Exception as e:
-                print(f"ERROR: Failed to schedule UI update: {str(e)}")
-            
-            # Check if communication interface is available
-            if not hasattr(self, 'comm') or self.comm is None:
-                error_msg = "Controller communication interface is not available"
-                print(f"ERROR: {error_msg}")
-                update_ui_with_error(error_msg)
-                return
-            
-            # Check if controller is connected
-            if not getattr(self.comm, 'connected', False):
-                error_msg = "Controller is not connected. Please check the connection and try again."
-                print(f"ERROR: {error_msg}")
-                update_ui_with_error(error_msg)
-                return
-            
-            items = []
-            try:
-                print(f"\nDEBUG: Preparing to list directory: '{path}'")
-                
-                # Log communication interface status
-                print(f"DEBUG: Communication interface status:")
-                print(f"  - Connected: {getattr(self.comm, 'connected', 'N/A')}")
-                print(f"  - WebSocket: {getattr(self.comm, 'ws', 'N/A')}")
-                
-                # Add a small delay to ensure UI updates are processed
-                print("\nDEBUG: Starting directory listing...")
-                start_time = time.time()
-                
-                # Call the directory listing function with timeout
-                try:
-                    print(f"DEBUG: Calling comm.list_directory('{path}')...")
-                    items = self.comm.list_directory(path)
-                    print(f"DEBUG: comm.list_directory() call completed")
-                except requests.exceptions.ConnectionError as ce:
-                    error_msg = f"Failed to connect to controller: {str(ce)}"
-                    print(f"ERROR: {error_msg}")
-                    update_ui_with_error(error_msg)
-                    return
-                except requests.exceptions.Timeout:
-                    error_msg = "Connection to controller timed out"
-                    print(f"ERROR: {error_msg}")
-                    update_ui_with_error(error_msg)
-                    return
+                    # Update the UI with the listing on the main thread - CORRECT CALLBACK ROUTING
+                    # Use immediate call if on main thread, or safe_update_ui if not
+                    if threading.current_thread() is threading.main_thread():
+                        update_ui_with_listing()
+                    else:
+                        safe_update_ui(update_ui_with_listing)
+                    
                 except Exception as e:
                     error_msg = f"Error listing directory: {str(e)}"
                     print(f"ERROR: {error_msg}")
                     import traceback
                     traceback.print_exc()
                     update_ui_with_error(error_msg)
-                    return
-                
-                elapsed = time.time() - start_time
-                print(f"\nDEBUG: Directory listing completed in {elapsed:.2f} seconds")
-                print(f"DEBUG: Received {len(items)} items from controller")
-                
-                if not items:
-                    print("WARNING: No items returned from controller (empty directory or error)")
-                
-                # Log first few items for debugging
-                print("\nDEBUG: First 5 items (if any):")
-                for i, item in enumerate(items[:5]):
-                    item_type = item.get('type', 'unknown')
-                    item_name = item.get('name', 'unnamed')
-                    item_size = item.get('size', 0)
-                    print(f"  {i+1}. {item_name} (type: {item_type}, size: {item_size})")
                     
-                if len(items) > 5:
-                    print(f"  ... and {len(items) - 5} more items")
-                
-                if not items:
-                    print(f"WARNING: No items returned for path: {path}")
-                
-                # Update UI on the main thread
-                def update_ui():
-                    try:
-                        # Remove loading indicator
-                        self.tree.delete(loading_id)
-                        
-                        # Add parent directory reference (..) if not at root
-                        if path != 'Home':
-                            parent_path = '/'.join(path.split('/')[:-1]) if '/' in path else 'Home'
-                            item_id = self.tree.insert(
-                                '', 'end',
-                                text='..',
-                                values=('', ''),
-                                tags=('directory', parent_path)
-                            )
-                            # Set the image after insertion to ensure it's displayed
-                            self.tree.item(item_id, image=self.folder_icon)
-                        
-                        # Separate directories and files for better sorting
-                        dirs = []
-                        files = []
-                        
-                        for item in items:
-                            name = item.get('name', '')
-                            if not name or name.startswith('.'):
-                                continue  # Skip hidden files/directories
-                                
-                            full_path = f"{path}/{name}" if path != 'Home' else name
-                            item['full_path'] = full_path
-                            
-                            if item.get('type', '').lower() == 'directory' or item.get('dir', False):
-                                dirs.append(item)
-                            else:
-                                files.append(item)
-                        
-                        # Sort directories and files
-                        dirs.sort(key=lambda x: x.get('name', '').lower())
-                        files.sort(key=lambda x: x.get('name', '').lower())
-                        
-                        # Add directories first
-                        for item in dirs:
-                            name = item.get('name', '')
-                            full_path = item['full_path']
-                            modified = item.get('modified', '')
-                            
-                            # Format date if it's a timestamp
-                            if modified and isinstance(modified, (int, float)) and modified > 0:
-                                try:
-                                    dt = datetime.fromtimestamp(modified)
-                                    modified = dt.strftime('%Y-%m-%d %H:%M')
-                                except (ValueError, OSError):
-                                    modified = str(modified)
-                            
-                            # Insert the item first
-                            item_id = self.tree.insert(
-                                '', 'end',
-                                text=name,
-                                values=('', modified),
-                                tags=('directory', full_path)
-                            )
-                            # Then set the image
-                            self.tree.item(item_id, image=self.folder_icon)
-                        
-                        # Then add files
-                        for item in files:
-                            name = item.get('name', '')
-                            full_path = item['full_path']
-                            size = self._format_size(item.get('size', 0))
-                            modified = item.get('modified', '')
-                            
-                            # Format date if it's a timestamp
-                            if modified and isinstance(modified, (int, float)) and modified > 0:
-                                try:
-                                    dt = datetime.fromtimestamp(modified)
-                                    modified = dt.strftime('%Y-%m-%d %H:%M')
-                                except (ValueError, OSError):
-                                    modified = str(modified)
-                            
-                            # Determine the appropriate icon
-                            icon = self.macro_icon if name.lower().endswith(('.gcode', '.ngc')) else self.file_icon
-                            
-                            # Insert the item first
-                            item_id = self.tree.insert(
-                                '', 'end',
-                                text=name,
-                                values=(size, modified),
-                                tags=('file', full_path)
-                            )
-                            # Then set the image
-                            self.tree.item(item_id, image=icon)
-                            
-                        # Update button states
-                        self._update_external_button_states()
-                        
-                    except Exception as e:
-                        print(f"Error updating UI: {str(e)}")
-                        import traceback
-                        traceback.print_exc()
-                        
-                        # Show error in UI
-                        self.tree.delete(loading_id)
-                        self.tree.insert('', 'end', text=f'Error: {str(e)}', values=('', ''), tags=('error',))
-                        self.tree.tag_configure('error', foreground='red')
-                
-                # Schedule UI update on the main thread
-                self.after(0, update_ui)
-                
             except Exception as e:
-                error_msg = f"Error listing directory {path}: {str(e)}"
-                print(error_msg)
+                print(f"ERROR in load_directory_async: {str(e)}")
                 import traceback
                 traceback.print_exc()
-                
-                # Update UI on the main thread
-                def show_error():
-                    try:
-                        self.tree.delete(loading_id)
-                        self.tree.insert('', 'end', text=f'Error: {str(e)}', values=('', ''), tags=('error',))
-                        self.tree.tag_configure('error', foreground='red')
-                    except Exception as ui_error:
-                        print(f"ERROR updating UI: {str(ui_error)}")
-                
-                self.after(0, show_error)
-            
-            finally:
-                # Update navigation buttons
-                self._update_navigation_buttons()
+                update_ui_with_error(f"Unexpected error: {str(e)}")
         
-        # Start the directory loading in a background thread
+        # Start the directory loading in a single background thread
         print("DEBUG: Starting directory loading thread...")
         try:
             thread_obj = threading.Thread(target=load_directory_async, daemon=True, name=f"DirLoad-{path}")
@@ -1255,17 +815,8 @@ class MacroPanel(ttk.LabelFrame):
             print(f"DEBUG: Directory loading thread started: {thread_obj.name}")
         except Exception as e:
             print(f"ERROR: Failed to start directory loading thread: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            # Show error in UI
-            self.after(0, lambda: self.tree.delete(loading_id))
-            self.after(0, lambda: self.tree.insert('', 'end', text=f'Error: {str(e)}', values=('', ''), tags=('error',)))
-        
-        # Update navigation buttons after loading directory
-        print("DEBUG: Updating navigation buttons...")
-        self._update_navigation_buttons()
-        self._update_external_button_states()
-        print("DEBUG: Navigation buttons updated")
+            self.tree.delete(loading_id)
+            self.tree.insert('', 'end', text=f'Error: {str(e)}', values=('', ''), tags=('error',))
     
     def _format_size(self, size_bytes):
         """Convert file size in bytes to human-readable format.

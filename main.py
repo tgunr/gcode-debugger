@@ -50,6 +50,11 @@ def check_dependencies():
 
 def main():
     """Main application entry point."""
+    import argparse
+    parser = argparse.ArgumentParser(description="G-Code Debugger for Buildbotics Controller")
+    parser.add_argument('--host', type=str, help='The hostname or IP address of the Buildbotics controller.')
+    args = parser.parse_args()
+
     print("G-Code Debugger v1.0.0")
     print("For Buildbotics Controller")
     print("-" * 30)
@@ -59,9 +64,16 @@ def main():
         sys.exit(1)
     
     try:
-        print("Before MainWindow()")
-        app = MainWindow()
-        print("After MainWindow()")
+        print("\nCreating MainWindow instance...")
+        # Create the main application window
+        app = MainWindow(host=args.host)
+        print("MainWindow created successfully")
+        print("MainWindow root window ID:", app.root.winfo_id())
+        
+        # Make sure the window is visible
+        app.root.deiconify()
+        app.root.lift()
+        app.root.focus_force()
         
         # Handle application close
         def on_closing():
@@ -70,10 +82,12 @@ def main():
         
         app.root.protocol("WM_DELETE_WINDOW", on_closing)
         
-        print("Starting G-Code Debugger...")
-        print("Before app.run()")
+        # Force an update of all pending GUI operations
+        app.root.update()
+        
+        print("Starting main event loop...")
         app.run()
-        print("After app.run() (should not see this unless window closes)")
+        print("Main event loop ended")
         
     except KeyboardInterrupt:
         print("\nApplication interrupted by user.")
@@ -83,18 +97,17 @@ def main():
         import traceback
         traceback.print_exc()
         
-        # Show error dialog if possible
-        try:
-            root = tk.Tk()
-            root.withdraw()
-            messagebox.showerror(
-                "Fatal Error", 
-                f"The application encountered a fatal error:\n\n{e}\n\nCheck the console for details."
-            )
-        except:
-            pass
+        # Show error dialog
+        messagebox.showerror(
+            "Fatal Error", 
+            f"The application encountered a fatal error:\n\n{e}\n\nCheck the console for details."
+        )
         
         sys.exit(1)
+    finally:
+        # Make sure to clean up properly
+        if 'app' in locals():
+            app.exit_application()
 
 if __name__ == "__main__":
     main()
