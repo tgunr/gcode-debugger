@@ -579,7 +579,8 @@ class MacroPanel(ttk.LabelFrame):
             for item in listing:
                 name = item.get('name')
                 item_type = item.get('type')
-                full_path = f"{path}/{name}" if path != 'Home' else name
+                # Always construct the full path by joining with the current path
+                full_path = f"{path}/{name}"
 
                 if item_type == 'directory':
                     self.tree.insert('', 'end', text=name, values=('', ''), image=self.folder_icon, tags=('directory', full_path))
