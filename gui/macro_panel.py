@@ -510,120 +510,25 @@ class MacroPanel(ttk.LabelFrame):
         self.tree.update()
         print(f"DEBUG: Loading indicator added with ID: {loading_id}")
         
-        # Define thread-safe UI update helper
-        def safe_update_ui(callback, *args):
-            """Safely execute a UI update on the main thread"""
-            try:
-                # If already on main thread, execute directly
-                if threading.current_thread() is threading.main_thread():
-                    try:
-                        return callback(*args)
-                    except Exception as e:
-                        print(f"ERROR executing callback on main thread: {str(e)}")
-                        import traceback
-                        traceback.print_exc()
-                        return None
-                
-                # Check if widget is still valid before scheduling
-                if not hasattr(self, 'after') or not callable(self.after):
-                    print("WARNING: Cannot update UI - no valid after method")
-                    return None
-                
-                try:
-                    # Check if widget still exists
-                    if hasattr(self, 'winfo_exists') and not self.winfo_exists():
-                        print("WARNING: Widget no longer exists, cannot update UI")
-                        return None
-                except Exception as check_error:
-                    print(f"WARNING: Cannot verify widget state: {str(check_error)}")
-                
-                # Create a thread-safe callback wrapper with no external references
-                def delayed_callback():
-                    try:
-                        # Double-check we're on main thread
-                        if not threading.current_thread() is threading.main_thread():
-                            print("ERROR: delayed_callback not on main thread")
-                            return
-                        
-                        # Execute the callback
-                        callback(*args)
-                        
-                    except Exception as e:
-                        print(f"ERROR in delayed_callback: {str(e)}")
-                        import traceback
-                        traceback.print_exc()
-                
-                # Schedule on main thread with immediate execution (after 1ms)
-                try:
-                    self.after(1, delayed_callback)
-                    return None
-                except Exception as schedule_error:
-                    print(f"ERROR scheduling UI update: {str(schedule_error)}")
-                    return None
-                    
-            except Exception as e:
-                print(f"ERROR in safe_update_ui: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                return None
-        
-        # Define error display helper
-        def update_ui_with_error(message):
-            """Update the UI to show an error message"""
-            print(f"ERROR: {message}")
-            
-            def _show_error():
-                try:
-                    # Clean up loading indicator first
-                    try:
-                        if hasattr(self, 'tree') and self.tree is not None:
-                            children = self.tree.get_children()
-                            for child in children:
-                                tags = self.tree.item(child, 'tags')
-                                if 'loading' in tags:
-                                    self.tree.delete(child)
-                                    print(f"DEBUG: Removed loading indicator: {child}")
-                    except Exception as cleanup_error:
-                        print(f"WARNING: Failed to clean up loading indicator: {str(cleanup_error)}")
-                    
-                    # Clear treeview safely
-                    if not self._safe_clear_treeview():
-                        print("WARNING: Failed to clear treeview for error display")
-                    
-                    # Add error message
-                    if hasattr(self, 'tree') and self.tree is not None:
-                        error_id = self.tree.insert('', 'end', text=f'Error: {message}', values=('', ''), tags=('error',))
-                        self.tree.tag_configure('error', foreground='red')
-                        print(f"DEBUG: Error message added with ID: {error_id}")
-                except Exception as e:
-                    print(f"ERROR in _show_error: {str(e)}")
-                    import traceback
-                    traceback.print_exc()
-            
-            # Call error display on main thread
-            if threading.current_thread() is threading.main_thread():
-                _show_error()
-            else:
-                safe_update_ui(_show_error)
-        
         # Main directory loading function
         def load_directory_async():
+            """Run directory loading in a separate thread."""
             try:
                 print(f"DEBUG: load_directory_async() starting for path: {path}")
                 
                 # Check communication interface
                 if not hasattr(self, 'comm') or self.comm is None:
-                    update_ui_with_error("Controller communication interface is not available")
+                    self.after(0, self._show_error_in_ui, loading_id, "Controller communication interface is not available")
                     return
                 
                 # Verify controller connection
                 if not hasattr(self.comm, 'connected') or not self.comm.connected:
-                    update_ui_with_error("Not connected to controller. Please check connection and try again.")
+                    self.after(0, self._show_error_in_ui, loading_id, "Not connected to controller. Please check connection and try again.")
                     return
                 
                 # Check if list_directory method is available
                 if not hasattr(self.comm, 'list_directory') or not callable(self.comm.list_directory):
-                    update_ui_with_error("Controller interface does not support directory listing")
+                    self.after(0, self._show_error_in_ui, loading_id, "Controller interface does not support directory listing")
                     return
                 
                 # Get directory listing
@@ -633,179 +538,28 @@ class MacroPanel(ttk.LabelFrame):
                     print(f"DEBUG: Received {len(listing) if listing else 0} items")
                     
                     if listing is None:
-                        update_ui_with_error("Received None response from list_directory")
+                        self.after(0, self._show_error_in_ui, loading_id, "Received None response from list_directory")
                         return
                         
                     if not isinstance(listing, (list, tuple)):
-                        update_ui_with_error(f"Invalid response type from controller. Expected list/tuple, got {type(listing).__name__}")
+                        self.after(0, self._show_error_in_ui, loading_id, f"Invalid response type from controller. Expected list/tuple, got {type(listing).__name__}")
                         return
                     
-                    # Define function to update UI with the listing - THIS IS THE CORRECT CALLBACK
-                    def update_ui_with_listing():
-                        try:
-                            print(f"DEBUG: Updating UI with directory listing ({len(listing)} items)")
-                            
-                            # Validate widget state before proceeding
-                            if not hasattr(self, 'tree') or self.tree is None:
-                                print("ERROR: Treeview widget is not available")
-                                return False
-                            
-                            # Verify we're on the main thread
-                            if not threading.current_thread() is threading.main_thread():
-                                print("ERROR: update_ui_with_listing called from background thread")
-                                return False
-                            
-                            # Clear existing items
-                            if not self._safe_clear_treeview():
-                                print("WARNING: Failed to clear treeview before updating")
-                                return False
-                            
-                            # Add parent directory reference (..) if not at root
-                            if path != 'Home':
-                                try:
-                                    parent_path = '/'.join(path.split('/')[:-1]) if '/' in path else 'Home'
-                                    item_id = self.tree.insert(
-                                        '', 'end',
-                                        text='..',
-                                        values=('', ''),
-                                        tags=('directory', parent_path)
-                                    )
-                                    if hasattr(self, 'folder_icon') and self.folder_icon is not None:
-                                        self.tree.item(item_id, image=self.folder_icon)
-                                    print(f"DEBUG: Added parent directory reference")
-                                except Exception as e:
-                                    print(f"WARNING: Failed to add parent directory reference: {str(e)}")
-                            
-                            # Add directory contents to treeview
-                            items_added = 0
-                            for item in listing:
-                                if not item or not isinstance(item, dict):
-                                    continue
-                                    
-                                try:
-                                    # Extract and validate item properties
-                                    name = str(item.get('name', 'Unknown')).strip()
-                                    if not name or name.startswith('.'):  # Skip empty or hidden
-                                        continue
-                                        
-                                    is_dir = bool(item.get('is_dir', False))
-                                    try:
-                                        size = int(item.get('size', 0))
-                                    except (ValueError, TypeError):
-                                        size = 0
-                                        
-                                    modified = str(item.get('modified', '')).strip()
-                                    full_path = f"{path}/{name}" if path != 'Home' else name
-                                    
-                                    # Validate tree widget before each insertion
-                                    if not hasattr(self, 'tree') or self.tree is None:
-                                        print("ERROR: Treeview widget became unavailable during update")
-                                        break
-                                    
-                                    # Determine icon safely
-                                    icon = None
-                                    try:
-                                        if is_dir:
-                                            icon = getattr(self, 'folder_icon', None)
-                                        elif name.lower().endswith(('.gcode', '.nc', '.ngc', '.tap', '.gc')):
-                                            icon = getattr(self, 'macro_icon', None)
-                                        else:
-                                            icon = getattr(self, 'file_icon', None)
-                                    except Exception as icon_error:
-                                        print(f"WARNING: Error getting icon for {name}: {str(icon_error)}")
-                                        icon = None
-                                    
-                                    # Format size for display
-                                    size_display = ''
-                                    if not is_dir:
-                                        try:
-                                            size_display = self._format_size(size)
-                                        except Exception as size_error:
-                                            print(f"WARNING: Error formatting size for {name}: {str(size_error)}")
-                                            size_display = str(size)
-                                    
-                                    # Insert the item safely
-                                    try:
-                                        item_id = self.tree.insert(
-                                            '', 'end',
-                                            text=name,
-                                            values=(size_display, modified),
-                                            tags=('directory' if is_dir else 'file', full_path)
-                                        )
-                                        
-                                        # Set the image if available
-                                        if icon is not None:
-                                            self.tree.item(item_id, image=icon)
-                                        
-                                        items_added += 1
-                                        
-                                    except Exception as insert_error:
-                                        print(f"ERROR inserting item {name} to treeview: {str(insert_error)}")
-                                        import traceback
-                                        traceback.print_exc()
-                                        continue
-                                        
-                                except Exception as item_error:
-                                    print(f"ERROR processing item {item.get('name', 'unknown')}: {str(item_error)}")
-                                    import traceback
-                                    traceback.print_exc()
-                                    continue
-                            
-                            # Update UI state safely
-                            try:
-                                self.current_path = path
-                                if hasattr(self, 'path_var') and self.path_var is not None:
-                                    self.path_var.set(f"Path: {path}")
-                                
-                                # Update navigation buttons
-                                if hasattr(self, '_update_navigation_buttons') and callable(self._update_navigation_buttons):
-                                    self._update_navigation_buttons()
-                                
-                                # Update button states
-                                if hasattr(self, '_update_external_button_states') and callable(self._update_external_button_states):
-                                    self._update_external_button_states()
-                                    
-                            except Exception as state_error:
-                                print(f"WARNING: Error updating UI state: {str(state_error)}")
-                                import traceback
-                                traceback.print_exc()
-                            
-                            print(f"DEBUG: Successfully updated directory listing. Added {items_added} items.")
-                            return True
-                            
-                        except Exception as e:
-                            print(f"ERROR in update_ui_with_listing: {str(e)}")
-                            import traceback
-                            traceback.print_exc()
-                            # Try to show error in UI if possible
-                            try:
-                                if hasattr(self, 'tree') and self.tree is not None:
-                                    self._safe_clear_treeview()
-                                    error_id = self.tree.insert('', 'end', text=f'Error updating UI: {str(e)}', values=('', ''), tags=('error',))
-                                    self.tree.tag_configure('error', foreground='red')
-                            except Exception as ui_error:
-                                print(f"ERROR: Could not display error in UI: {str(ui_error)}")
-                            return False
-                    
-                    # Update the UI with the listing on the main thread - CORRECT CALLBACK ROUTING
-                    # Use immediate call if on main thread, or safe_update_ui if not
-                    if threading.current_thread() is threading.main_thread():
-                        update_ui_with_listing()
-                    else:
-                        safe_update_ui(update_ui_with_listing)
+                    # Schedule UI update on main thread
+                    self.after(0, self._update_ui_with_listing, loading_id, path, listing)
                     
                 except Exception as e:
                     error_msg = f"Error listing directory: {str(e)}"
                     print(f"ERROR: {error_msg}")
                     import traceback
                     traceback.print_exc()
-                    update_ui_with_error(error_msg)
+                    self.after(0, self._show_error_in_ui, loading_id, error_msg)
                     
             except Exception as e:
                 print(f"ERROR in load_directory_async: {str(e)}")
                 import traceback
                 traceback.print_exc()
-                update_ui_with_error(f"Unexpected error: {str(e)}")
+                self.after(0, self._show_error_in_ui, loading_id, f"Unexpected error: {str(e)}")
         
         # Start the directory loading in a single background thread
         print("DEBUG: Starting directory loading thread...")
@@ -814,7 +568,7 @@ class MacroPanel(ttk.LabelFrame):
             thread_obj.start()
             print(f"DEBUG: Directory loading thread started: {thread_obj.name}")
         except Exception as e:
-            print(f"ERROR: Failed to start directory loading thread: {str(e)}")
+            print(f"ERROR: Failed to start directory loading a thread: {str(e)}")
             self.tree.delete(loading_id)
             self.tree.insert('', 'end', text=f'Error: {str(e)}', values=('', ''), tags=('error',))
     
@@ -1942,113 +1696,10 @@ class MacroPanel(ttk.LabelFrame):
             return "0 B"
     
     def _safe_clear_treeview(self):
-        """Safely clear all items from the treeview with thread safety.
-        
-        Returns:
-            bool: True if the treeview was cleared successfully, False otherwise
-        """
-        print(f"\n{'='*80}")
-        print(f"DEBUG: _safe_clear_treeview() called from thread: {threading.current_thread().name}")
-        
-        def _do_clear():
-            try:
-                # Check if treeview exists and is accessible
-                if not hasattr(self, 'tree') or self.tree is None:
-                    print("WARNING: Treeview widget not found or already destroyed")
-                    return False
-                
-                print("DEBUG: Treeview widget found")
-                
-                # Check if the widget is still valid
-                try:
-                    exists = self.tree.winfo_exists()
-                    print(f"DEBUG: Treeview exists check: {exists}")
-                    if not exists:
-                        print("WARNING: Treeview widget exists but is not valid")
-                        return False
-                except tk.TclError as e:
-                    print(f"WARNING: Treeview widget is no longer valid: {str(e)}")
-                    return False
-                
-                # Get all children with error handling
-                try:
-                    children = self.tree.get_children()
-                    print(f"DEBUG: Found {len(children)} items to clear")
-                    if not children:
-                        print("DEBUG: No items to clear")
-                        return True  # Nothing to clear
-                except tk.TclError as e:
-                    print(f"WARNING: Failed to get treeview children: {str(e)}")
-                    return False
-                
-                # Remove all items in a single operation with error handling
-                try:
-                    print("DEBUG: Attempting to clear treeview items")
-                    self.tree.delete(*children)
-                    # Force update to ensure the treeview is cleared before continuing
-                    self.tree.update_idletasks()
-                    print("DEBUG: Successfully cleared treeview items")
-                    return True
-                except tk.TclError as e:
-                    print(f"WARNING: Failed to clear treeview items: {str(e)}")
-                    return False
-                except Exception as e:
-                    print(f"ERROR: Unexpected error in _do_clear: {str(e)}")
-                    import traceback
-                    traceback.print_exc()
-                    return False
-                
-            except Exception as e:
-                print(f"ERROR in _do_clear: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                return False
-                
-        try:
-            # If we're on the main thread, execute directly
-            if threading.current_thread() is threading.main_thread():
-                print("DEBUG: Running on main thread, executing directly")
-                return _do_clear()
-                
-            print("DEBUG: Not on main thread, scheduling operation")
-            
-            # Otherwise, use a queue to get the result from the main thread
-            result_queue = queue.Queue()
-            
-            def wrapper():
-                try:
-                    print("DEBUG: Wrapper executing on main thread")
-                    result = _do_clear()
-                    result_queue.put(result)
-                    print(f"DEBUG: Wrapper completed with result: {result}")
-                except Exception as e:
-                    print(f"ERROR in wrapper: {str(e)}")
-                    import traceback
-                    traceback.print_exc()
-                    result_queue.put(False)
-                    
-            # Schedule the operation on the main thread
-            if hasattr(self, 'after') and callable(self.after):
-                print("DEBUG: Scheduling clear operation on main thread")
-                self.after(0, wrapper)
-                
-                # Wait for the result with a timeout to prevent hanging
-                try:
-                    print("DEBUG: Waiting for clear operation to complete...")
-                    result = result_queue.get(timeout=5.0)  # Increased timeout to 5 seconds
-                    print(f"DEBUG: Clear operation completed with result: {result}")
-                    return result
-                except queue.Empty:
-                    print("WARNING: Timeout waiting for treeview clear operation")
-                    return False
-            else:
-                print("WARNING: Cannot schedule treeview clear - no 'after' method available")
-                return False
-        except Exception as e:
-            print(f"ERROR in thread handling: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return False
+        """Safely clear all items from the treeview."""
+        if hasattr(self, 'tree') and self.tree:
+            for item in self.tree.get_children():
+                self.tree.delete(item)
             
     def _show_error_in_ui(self, loading_id, error_msg):
         """Display an error message in the UI.
@@ -2224,8 +1875,7 @@ class LocalMacroEditDialog:
         ttk.Button(btn_frame, text="Cancel", command=self._on_cancel).pack(side=tk.RIGHT)
         
         # Configure grid weights
-        main_frame.columnconfigure(1,
-weight=1)
+        main_frame.columnconfigure(1, weight=1)
         main_frame.rowconfigure(3, weight=1)
         
         # Focus on name entry

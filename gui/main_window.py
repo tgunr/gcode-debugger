@@ -8,6 +8,7 @@ The primary interface that integrates all debugger components.
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 import os
+import queue
 from typing import Optional
 
 from core.communication import BBCtrlCommunicator
@@ -127,10 +128,21 @@ class MainWindow:
 
     def _thread_safe_callback(self, func, *args, **kwargs):
         """Ensure func runs on the main thread."""
-        if threading.get_ident() == self._main_thread:
-            return func(*args, **kwargs)
-        else:
-            self.root.after(0, lambda: func(*args, **kwargs))
+        if not hasattr(self, 'ui_queue'):
+            self.ui_queue = queue.Queue()
+            self.root.after(100, self._process_ui_queue)
+        self.ui_queue.put((func, args, kwargs))
+
+    def _process_ui_queue(self):
+        """Process UI updates from the queue."""
+        try:
+            while not self.ui_queue.empty():
+                func, args, kwargs = self.ui_queue.get_nowait()
+                func(*args, **kwargs)
+        except queue.Empty:
+            pass
+        finally:
+            self.root.after(100, self._process_ui_queue)
     
     def _update_macro_ui(self):
         """Safely update the macro UI components."""
