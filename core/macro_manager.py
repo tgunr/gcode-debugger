@@ -496,7 +496,7 @@ class MacroManager:
                         continue
                     if diff > 0:
                         print(f"DEBUG: Controller copy of '{name}' is newer. Downloading.")
-                        self._write_external_macro(name, ctrl_data, external_dir)
+                        self._write_external_macro(communicator, name, ctrl_data, external_dir)
                         self._create_or_update_local(ctrl_data)
                     else:
                         print(f"DEBUG: Local copy of '{name}' is newer. Uploading.")
@@ -504,7 +504,7 @@ class MacroManager:
                         self._create_or_update_local(ext_data)
                 elif ctrl_present and not ext_present:
                     print(f"DEBUG: Macro '{name}' found only on controller. Downloading.")
-                    self._write_external_macro(name, ctrl_data, external_dir)
+                    self._write_external_macro(communicator, name, ctrl_data, external_dir)
                     self._create_or_update_local(ctrl_data)
                 elif ext_present and not ctrl_present:
                     print(f"DEBUG: Macro '{name}' found only locally. Uploading.")
@@ -520,18 +520,39 @@ class MacroManager:
             print(f"ERROR: sync_bidirectional failed: {e}\n{traceback.format_exc()}")
             return False
 
-    def _write_external_macro(self, name: str, data: Dict[str, Any], external_dir: str) -> None:
-        """Write a macro JSON file to the external directory, ensuring the path exists."""
-        full_path = os.path.join(external_dir, data.get('path', f"{name}.json"))
-        dir_path = os.path.dirname(full_path)
+    def _write_external_macro(self, communicator, name: str, data: Dict[str, Any], external_dir: str) -> None:
+        """Write a macro file content to the external directory, ensuring the path exists."""
         
+        # Get the relative path of the file on the controller
+        path_on_controller = data.get('path')
+        if not path_on_controller:
+            print(f"ERROR: Cannot write external macro '{name}', path is missing in metadata.")
+            return
+
+        # Construct the full local path, mirroring the controller's structure
+        full_local_path = os.path.join(external_dir, path_on_controller)
+        dir_path = os.path.dirname(full_local_path)
+
         try:
+            print(f"DEBUG: Attempting to write controller file to: {full_local_path}")
+            
+            # Read the actual file content from the controller
+            content = communicator.read_file(path_on_controller)
+            if content is None:
+                print(f"ERROR: Failed to read content of '{path_on_controller}' from controller.")
+                return
+
+            # Ensure the target directory exists
             os.makedirs(dir_path, exist_ok=True)
-            with open(full_path, "w") as f:
-                json.dump(data, f, indent=2)
-            print(f"DEBUG: Successfully wrote macro to {full_path}")
+            
+            # Write the raw G-code content to the file
+            with open(full_local_path, "w") as f:
+                f.write(content)
+                
+            print(f"DEBUG: Successfully wrote file to {full_local_path}")
+
         except Exception as e:
-            print(f"ERROR: Failed to write macro {name} to {full_path}: {e}")
+            print(f"ERROR: Failed to write macro {name} to {full_local_path}: {e}")
 
     def _create_or_update_local(self, data: Dict[str, Any]) -> None:
         """Create or update the macro in the local manager storage."""
