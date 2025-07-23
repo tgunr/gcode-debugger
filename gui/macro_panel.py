@@ -653,12 +653,14 @@ class MacroPanel(ttk.LabelFrame):
             try:
                 content = self.comm.read_file(file_path)
                 if content is None:
-                    raise Exception("Failed to read file content from controller (received None).")
+                    # File not found or other error a la communication.py
+                    error_msg = f"Failed to read file '{os.path.basename(file_path)}' from controller."
+                    self._queue_ui_update(messagebox.showerror, "Error", error_msg)
+                    return
                 
                 self._queue_ui_update(self._update_editor_content, file_path, content)
             except Exception as e:
-                # Queue the error message to be shown on the main thread
-                error_msg = f"Failed to read file '{os.path.basename(file_path)}':\n\n{str(e)}"
+                error_msg = f"An unexpected error occurred while opening '{os.path.basename(file_path)}':\n\n{str(e)}"
                 self._queue_ui_update(messagebox.showerror, "Error", error_msg)
 
         threading.Thread(target=do_open_file, daemon=True, name=f"OpenFile-{os.path.basename(file_path)}").start()
