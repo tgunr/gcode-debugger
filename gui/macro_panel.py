@@ -652,41 +652,52 @@ class MacroPanel(ttk.LabelFrame):
         self._update_local_button_states()
     
     def _open_file(self, file_path):
-        """Open a file for viewing/editing."""
-        try:
-            main_window = self._get_main_window()
-            if not main_window or not hasattr(main_window, 'code_editor'):
-                messagebox.showerror("Error", "Could not access the code editor.")
-                return
-                
-            # Get the file content from the controller
+        """Open a file for viewing/editing in a thread-safe way."""
+        main_window = self._get_main_window()
+        if not main_window or not hasattr(main_window, 'code_editor'):
+            self._queue_ui_update(messagebox.showerror, "Error", "Could not access the code editor.")
+            return
+
+        def do_open_file():
+            """Perform network file read in a background thread."""
             try:
                 content = self.comm.read_file(file_path)
                 if content is None:
-                    raise Exception("Failed to read file content")
+                    raise Exception("Failed to read file content from controller (received None).")
+                
+                self._queue_ui_update(self._update_editor_content, file_path, content)
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to read file: {str(e)}")
-                return
-            
+                # Queue the error message to be shown on the main thread
+                error_msg = f"Failed to read file '{os.path.basename(file_path)}':\n\n{str(e)}"
+                self._queue_ui_update(messagebox.showerror, "Error", error_msg)
+
+        threading.Thread(target=do_open_file, daemon=True, name=f"OpenFile-{os.path.basename(file_path)}").start()
+
+    def _update_editor_content(self, file_path, content):
+        """Update the code editor with file content. Must run on UI thread."""
+        main_window = self._get_main_window()
+        if not main_window or not hasattr(main_window, 'code_editor'):
+            return
+
+        try:
             # Clear and populate the editor
             main_window.code_editor.text_widget.delete('1.0', tk.END)
             main_window.code_editor.text_widget.insert('1.0', content)
             
             # Update window title and status
-            file_name = file_path.split('/')[-1] if '/' in file_path else file_path
+            file_name = os.path.basename(file_path)
             main_window.current_file_path = file_path
             if hasattr(main_window, 'file_status'):
                 main_window.file_status.set(f"Viewing: {file_name}")
             
-            # Mark as clean since we just loaded this content
+            # Mark as clean
             if hasattr(main_window, 'mark_editor_clean'):
                 main_window.mark_editor_clean()
                 
             # Apply syntax highlighting
             main_window.code_editor.highlight_all()
-            
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to open file: {str(e)}")
+            messagebox.showerror("Error", f"Failed to update editor: {str(e)}")
             
     def _load_icon(self, icon_name):
         """
@@ -1030,22 +1041,6 @@ class MacroPanel(ttk.LabelFrame):
         self.local_export_btn.config(state=tk.NORMAL if has_selection else tk.DISABLED)
     
     # External macro event handlers
-    def _on_external_macro_select(self, event):
-        """Handle external macro selection and load into editor."""
-        selection = self.external_macro_listbox.curselection()
-        if selection:
-            macro_text = self.external_macro_listbox.get(selection[0])
-            # Extract macro name (remove emoji and description)
-            macro_name = macro_text.split(' - ')[0].split(' ', 1)[1]  # Remove emoji prefix
-            self.selected_macro = self.macro_manager.get_macro(macro_name)
-            
-            # Load the macro into the editor
-            if self.selected_macro:
-                self._load_macro_into_editor(self.selected_macro, is_local=False)
-        else:
-            self.selected_macro = None
-        
-        self._update_external_button_states()
         
     def _save_current_macro(self, main_window) -> bool:
         """Save the current macro content back to the macro manager.
@@ -1619,65 +1614,6 @@ class MacroPanel(ttk.LabelFrame):
             else:
                 messagebox.showerror("Error", f"Failed to export controller file.")
     
-    def _on_view_external_macro_in_editor(self, event=None):
-        """View the selected controller file in the code editor."""
-        # If no macro is selected, try to get the current selection
-        if not self.selected_macro:
-            selection = self.external_macro_listbox.curselection()
-            if not selection:
-                return
-            self._on_external_macro_select(event)  # Update the selection
-            if not self.selected_macro:  # Still no selection
-                return
-            
-        # Get the main window
-        main_window = self._get_main_window()
-        if not main_window or not hasattr(main_window, 'code_editor'):
-            messagebox.showerror("Error", "Could not access the code editor.")
-            return
-            
-        try:
-            # Check for unsaved changes in the editor
-            if hasattr(main_window, 'is_editor_dirty') and main_window.is_editor_dirty():
-                if not messagebox.askyesno(
-                    "Unsaved Changes",
-                    "You have unsaved changes in the editor. Load macro anyway?"
-                ):
-                    return  # User chose not to discard changes
-                    
-            # Create a header for the macro
-            macro_content = f"; Controller File: {self.selected_macro.name}\n"
-            if self.selected_macro.description:
-                macro_content += f"; Description: {self.selected_macro.description}\n"
-            if hasattr(self.selected_macro, 'group') and self.selected_macro.group:
-                macro_content += f"; Group: {self.selected_macro.group}\n"
-            macro_content += ";\n"
-            
-            # Add the macro commands
-            macro_content += '\n'.join(self.selected_macro.commands)
-            
-            # Load the content into the editor
-            main_window.code_editor.text_widget.delete('1.0', tk.END)
-            main_window.code_editor.text_widget.insert('1.0', macro_content)
-            
-            # Update window title and status
-            main_window.current_file_path = f"[Controller] {self.selected_macro.name}"
-            if hasattr(main_window, 'file_status'):
-                main_window.file_status.set(f"Viewing: {self.selected_macro.name} (External Macro)")
-            
-            # Mark as clean since we just loaded this content
-            if hasattr(main_window, 'mark_editor_clean'):
-                main_window.mark_editor_clean()
-            
-            # Log the action
-            if hasattr(main_window, '_log_message'):
-                main_window._log_message(f"Loaded external macro '{self.selected_macro.name}' into editor")
-            
-            # Apply syntax highlighting
-            main_window.code_editor.highlight_all()
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to load macro into editor: {e}")
     
     def _on_nav_back(self):
         """Handle Back button click to navigate back in history."""
