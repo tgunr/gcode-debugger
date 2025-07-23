@@ -6,6 +6,7 @@ Based on the proven send_gcode_direct.py approach for WebSocket communication
 with the Buildbotics controller.
 """
 
+import os
 import json
 import logging
 import random
