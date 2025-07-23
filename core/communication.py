@@ -1067,9 +1067,9 @@ class BBCtrlCommunicator:
                         subdir_path = f"{path}/{item_name}" if path else item_name
                         macros.update(self._find_macros_recursive(subdir_path))
                         
-                    elif item_name.lower().endswith('.gcode'):
+                    elif item_name.lower().endswith(('.gcode', '.nc', '.tap', '.ngc')):
                         # Add macro to results
-                        macro_name = item_name[:-6]  # Remove .gcode extension
+                        macro_name, _ = os.path.splitext(item_name)
                         full_path = f"{path}/{item_name}" if path else item_name
                         
                         # Try to get description from file content
