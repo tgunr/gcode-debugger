@@ -1204,8 +1204,9 @@ class BBCtrlCommunicator:
         """
         try:
             # Ensure file_path is properly URL-encoded
-            # Use requests.utils.quote which is known to work for directory listing
-            encoded_path = requests.utils.quote(file_path)
+            # Use urllib.parse.quote to handle spaces and other special characters
+            from urllib.parse import quote
+            encoded_path = quote(file_path, safe='/:')
             url = f'{self.base_url}/api/fs/file/{encoded_path}'
             print(f"DEBUG: Reading file: {url}")
             
