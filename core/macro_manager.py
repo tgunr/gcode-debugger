@@ -521,13 +521,17 @@ class MacroManager:
             return False
 
     def _write_external_macro(self, name: str, data: Dict[str, Any], external_dir: str) -> None:
-        """Write a macro JSON file to the external directory."""
-        path = os.path.join(external_dir, f"{name}.json")
+        """Write a macro JSON file to the external directory, ensuring the path exists."""
+        full_path = os.path.join(external_dir, data.get('path', f"{name}.json"))
+        dir_path = os.path.dirname(full_path)
+        
         try:
-            with open(path, "w") as f:
+            os.makedirs(dir_path, exist_ok=True)
+            with open(full_path, "w") as f:
                 json.dump(data, f, indent=2)
+            print(f"DEBUG: Successfully wrote macro to {full_path}")
         except Exception as e:
-            print(f"ERROR: Failed to write macro {name} to external dir: {e}")
+            print(f"ERROR: Failed to write macro {name} to {full_path}: {e}")
 
     def _create_or_update_local(self, data: Dict[str, Any]) -> None:
         """Create or update the macro in the local manager storage."""
