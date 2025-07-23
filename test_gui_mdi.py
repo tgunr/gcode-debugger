@@ -8,6 +8,31 @@ import os
 import time
 import tkinter as tk
 
+# --------------------------------------------------------------------------- #
+# Guard: Skip GUI tests gracefully when Tk cannot be initialized (headless CI)
+# --------------------------------------------------------------------------- #
+def _can_init_tk() -> bool:
+    """Return True if a Tk root window can be created (i.e., a display is available)."""
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        root.destroy()
+        return True
+    except Exception:
+        return False
+
+
+# When running in environments without a display (e.g., GitHub Actions),
+# attempting to create the first Tk() instance segfaults.  Probe availability
+# early and skip the whole module if Tk cannot start.
+if not _can_init_tk():  # pragma: no cover
+    import pytest
+
+    pytest.skip(
+        "Tkinter GUI not available (likely headless CI); skipping GUI tests.",
+        allow_module_level=True,
+    )
+
 # Add the current directory to Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)

@@ -221,9 +221,10 @@ class MacroPanel(ttk.LabelFrame):
         self.macro_icon = self._load_icon('macro')
         
         # Bind events for the treeview
+        # Bind events
         self.tree.bind('<Double-1>', self._on_tree_item_double_click)
         self.tree.bind('<<TreeviewSelect>>', self._on_tree_item_select)
-        self.tree.bind('<Button-3>', self._on_tree_right_click)  # Right-click for context menu
+        self.tree.bind('<Button-3>', self._on_tree_right_click)
         
         # Create context menu
         self.tree_menu = tk.Menu(self.tree, tearoff=0)
@@ -234,17 +235,6 @@ class MacroPanel(ttk.LabelFrame):
         self.tree_menu.add_command(label="Rename", command=self._on_rename_item)
         self.tree_menu.add_separator()
         self.tree_menu.add_command(label="Refresh", command=self._refresh_external_macro_list)
-        self.tree.bind('<<TreeviewSelect>>', self._on_tree_item_select)
-        
-        # Add a right-click context menu
-        self.tree_menu = tk.Menu(self.tree, tearoff=0)
-        self.tree_menu.add_command(label="Open", command=self._on_open_item)
-        self.tree_menu.add_command(label="Edit", command=self._on_edit_external_macro)
-        self.tree_menu.add_separator()
-        self.tree_menu.add_command(label="Delete", command=self._on_delete_external_macro)
-        
-        # Bind right-click event
-        self.tree.bind('<Button-3>', self._on_tree_right_click)
         
         # Navigation history
         self.path_history = []
@@ -776,32 +766,35 @@ class MacroPanel(ttk.LabelFrame):
     
     def _on_tree_item_double_click(self, event):
         """Handle double-click on a tree item."""
-        item = self.tree.identify('item', event.x, event.y)
-        if not item:
+        print("DEBUG: _on_tree_item_double_click triggered")
+        item_id = self.tree.identify_row(event.y)
+        if not item_id:
+            print("DEBUG: Double-click did not identify an item")
             return
-            
-        tags = self.tree.item(item, 'tags')
-        if not tags or len(tags) < 2:  # Need at least type and path
+
+        item = self.tree.item(item_id)
+        tags = item.get('tags', [])
+        print(f"DEBUG: Double-clicked item: {item_id}, Text: {item.get('text')}, Tags: {tags}")
+
+        if not tags:
+            print("DEBUG: No tags found for the item.")
             return
-            
+
         item_type = tags[0]
-        full_path = tags[1]
-        
+        full_path = tags[1] if len(tags) > 1 else None
+
+        if not full_path:
+            print(f"DEBUG: No path associated with item {item_id}")
+            return
+            
         if item_type == 'directory':
-            # If it's the parent directory (..), navigate up
-            if self.tree.item(item, 'text') == '..':
-                parts = self.current_path.split('/')
-                if len(parts) > 1:
-                    parent_path = '/'.join(parts[:-1]) if len(parts) > 1 else 'Home'
-                    self._load_directory(parent_path)
-                else:
-                    self._load_directory('Home')
-            else:
-                # Navigate into the directory
-                self._load_directory(full_path)
-        else:
-            # Open the file
+            print(f"DEBUG: Navigating to directory: {full_path}")
+            self._load_directory(full_path)
+        elif item_type == 'file':
+            print(f"DEBUG: Opening file: {full_path}")
             self._open_file(full_path)
+        else:
+            print(f"DEBUG: Unknown item type: {item_type}")
     
     def _on_tree_item_select(self, event):
         """Handle selection of a tree item."""

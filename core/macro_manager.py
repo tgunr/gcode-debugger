@@ -24,35 +24,69 @@ class Macro:
     color: str = "#e6e6e6"
     hotkey: str = ""
 
+    # --- Legacy adapter -------------------------------------------------
+    # Treat the dataclass like a mapping so legacy tests that do
+    # `macro["commands"]` or similar continue to work.
+    def __getitem__(self, key):
+        return getattr(self, key)
+
 class MacroManager:
     """Manages G-code macros for the debugger."""
     
-    def __init__(self, macros_directory: str = "macros"):
-        self.macros_directory = os.path.abspath(os.path.expanduser(str(macros_directory)))
+    def __init__(self, *args, **kwargs):
+        """
+        Back-compat constructor.
+
+        Supported call signatures (old and new):
+            MacroManager()                               -> default 'macros'
+            MacroManager(macros_dir)                     -> specify directory
+            MacroManager(comm, macros_dir)               -> legacy: communicator first
+            MacroManager(communicator=..., macros_directory=...)
+
+        Extra keyword arguments are ignored for now.
+        """
+        # Parse positional arguments -------------------------------------------------
+        self.communicator = None       # may remain None for modern code
+        macros_dir = "macros"
+
+        if len(args) == 1:
+            macros_dir = args[0]
+        elif len(args) == 2:
+            self.communicator, macros_dir = args
+        elif len(args) > 2:
+            raise TypeError("MacroManager expected at most 2 positional arguments")
+
+        # Parse keyword arguments ----------------------------------------------------
+        if "communicator" in kwargs:
+            self.communicator = kwargs.pop("communicator")
+        if "macros_directory" in kwargs:
+            macros_dir = kwargs.pop("macros_directory")
+
+        # Preserve unknown kwargs for future compatibility but ignore for now
+        self.macros_directory = os.path.abspath(os.path.expanduser(str(macros_dir)))
         self.macros: Dict[str, Macro] = {}
         self.categories = ["system", "user", "homing", "tool_change", "probing", "custom"]
-        
-        print(f"DEBUG: Initializing MacroManager with directory: {self.macros_directory}")
-        
+
+        print(f"DEBUG: Initializing MacroManager with directory: {self.macros_directory} "
+              f"(communicator={'set' if self.communicator else 'none'})")
+
         try:
-            # Ensure macros directory exists
+            # Ensure macros directory exists and is writable ------------------------
             os.makedirs(self.macros_directory, exist_ok=True)
-            
-            # Verify directory is writable
             if not os.access(self.macros_directory, os.W_OK):
                 print(f"WARNING: Directory is not writable: {self.macros_directory}")
-            
-            # Load existing macros
+
+            # Load any existing macros ---------------------------------------------
             self.load_macros()
-            
-            # Create default macros if none exist
+
+            # If none exist, create the defaults -----------------------------------
             if not self.macros:
                 print("DEBUG: No macros found, creating default macros")
                 self._create_default_macros()
-                
+
         except Exception as e:
             print(f"ERROR: Failed to initialize MacroManager: {str(e)}")
-            # Try to continue with empty macro list if there's an error
+            # Continue with an empty macro list rather than crashing
             self.macros = {}
     
     def create_macro(self, name: str, commands: List[str], description: str = "", 
@@ -202,8 +236,28 @@ class MacroManager:
             # Get macros from controller
             print("DEBUG: Fetching macros from controller...")
             controller_macros = communicator.get_macros()
-            if controller_macros is None:
-                print("WARNING: No macros found on controller or failed to fetch")
+
+            # --- Compatibility adapter ---------------------------------------------------
+            # communicator.get_macros() used to return a dict keyed by macro name but now
+            # returns a list of macro records.  The following normalises either shape to
+            # the original dict format expected by the rest of this method.
+            if isinstance(controller_macros, list):
+                tmp = {}
+                for m in controller_macros:
+                    if isinstance(m, dict):
+                        name = m.get("name")
+                        data = m
+                    else:
+                        name = getattr(m, "name", None)
+                        data = m.__dict__ if hasattr(m, "__dict__") else {}
+                    if not name:
+                        continue
+                    tmp[name] = data
+                controller_macros = tmp
+
+            # Validate payload after normalisation
+            if controller_macros is None or not isinstance(controller_macros, dict):
+                print("WARNING: No macros found on controller or unsupported payload format")
                 return False
                 
             print(f"DEBUG: Found {len(controller_macros)} macros on controller")
@@ -370,6 +424,24 @@ class MacroManager:
             # 2. Gather macro metadata from controller and external directory
             # ------------------------------------------------------------------
             controller_macros = communicator.get_macros() if communicator else {}
+
+            # --- Compatibility adapter ---------------------------------------------------
+            # communicator.get_macros() may return a list (new API) or dict (legacy).
+            # Convert list payload into the dict format expected below.
+            if isinstance(controller_macros, list):
+                tmp = {}
+                for m in controller_macros:
+                    if isinstance(m, dict):
+                        name = m.get("name")
+                        data = m
+                    else:
+                        name = getattr(m, "name", None)
+                        data = m.__dict__ if hasattr(m, "__dict__") else {}
+                    if not name:
+                        continue
+                    tmp[name] = data
+                controller_macros = tmp
+
             controller_macros = controller_macros or {}
 
             # name -> (data, modified_dt)

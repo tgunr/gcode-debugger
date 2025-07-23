@@ -59,3 +59,31 @@ To verify the changes:
 - Implement drag-and-drop support for files
 - Add keyboard shortcuts for common actions
 - Improve performance with large file sets
+
+### 5. Controller API Change & Compatibility Shim (2025-07-22)
+
+A recent firmware release changed `communicator.get_macros()` to return **`list[dict|Macro]`** instead of the legacy **`dict[str, dict]`**.  
+This broke `MacroManager.sync_from_controller()` which assumed a dict and called `.items()`.
+
+**Fix implemented (core/macro_manager.py, ~L365-390)**  
+A lightweight shim now detects a list payload and converts it back to the legacy dict keyed by macro name:
+
+```python
+controller_macros = communicator.get_macros() if communicator else {}
+if isinstance(controller_macros, list):
+    tmp = {}
+    for m in controller_macros:
+        if isinstance(m, dict):
+            name = m.get("name")
+            data = m
+        else:
+            name = getattr(m, "name", None)
+            data = m.__dict__ if hasattr(m, "__dict__") else {}
+        if name:
+            tmp[name] = data
+    controller_macros = tmp
+controller_macros = controller_macros or {}
+```
+
+The shim is strictly internal, so downstream logic continues to work unchanged.  
+Unit tests will be added to guarantee compatibility with both payload shapes.

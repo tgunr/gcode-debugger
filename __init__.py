@@ -1,9 +1,6 @@
 """
-G-Code Debugger for Buildbotics Controller
+gcode_debugger package initializer.
 
-A comprehensive debugging tool for stepping through G-code files
-with full control over execution, breakpoints, and state monitoring.
+Required for Python to recognize 'Tools.gcode_debugger' as an importable
+package when running tests directly from the repository root.
 """
-
-__version__ = "1.0.0"
-__author__ = "Buildbotics Team"

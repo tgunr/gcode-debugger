@@ -1124,7 +1124,7 @@ class BBCtrlCommunicator:
         
         try:
             # Handle root directory
-            if path in ['', '/', 'Home']:
+            if path in ['', '/']:
                 print("DEBUG: Requesting root directory contents...")
                 items = self._list_directory('')
                 print(f"DEBUG: Got {len(items)} items from _list_directory('')")
@@ -1203,7 +1203,9 @@ class BBCtrlCommunicator:
         """
         try:
             # Ensure file_path is properly URL-encoded
-            encoded_path = requests.utils.quote(file_path)
+            # Use urllib.parse.quote to handle spaces and other special characters
+            from urllib.parse import quote
+            encoded_path = quote(file_path)
             url = f'{self.base_url}/api/fs/file/{encoded_path}'
             print(f"DEBUG: Reading file: {url}")
             
