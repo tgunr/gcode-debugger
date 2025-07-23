@@ -495,19 +495,19 @@ class MacroManager:
                         # Same timestamp – nothing to do
                         continue
                     if diff > 0:
-                        # Controller has newer copy – write to external dir
+                        print(f"DEBUG: Controller copy of '{name}' is newer. Downloading.")
                         self._write_external_macro(name, ctrl_data, external_dir)
                         self._create_or_update_local(ctrl_data)
                     else:
-                        # External copy newer – upload
+                        print(f"DEBUG: Local copy of '{name}' is newer. Uploading.")
                         communicator.upload_macro(name, ext_data)
                         self._create_or_update_local(ext_data)
                 elif ctrl_present and not ext_present:
-                    # Only on controller – save externally
+                    print(f"DEBUG: Macro '{name}' found only on controller. Downloading.")
                     self._write_external_macro(name, ctrl_data, external_dir)
                     self._create_or_update_local(ctrl_data)
                 elif ext_present and not ctrl_present:
-                    # Only external – upload to controller
+                    print(f"DEBUG: Macro '{name}' found only locally. Uploading.")
                     communicator.upload_macro(name, ext_data)
                     self._create_or_update_local(ext_data)
 
