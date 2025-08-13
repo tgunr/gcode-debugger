@@ -10,6 +10,9 @@ import sys
 import os
 import tkinter as tk
 from tkinter import messagebox
+from core.config import get_config
+from core.communication import BBCtrlCommunicator
+from core.macro_manager import MacroManager
 
 # Add the current directory to Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -23,6 +26,41 @@ except ImportError as e:
     print("Please ensure all required dependencies are installed.")
     print("Run: pip install -r requirements.txt")
     sys.exit(1)
+
+def sync_macros_on_startup(controller_url: str, macros_path: str) -> None:
+    """Sync macros on application startup."""
+    try:
+        # Create communicator instance
+        communicator = BBCtrlCommunicator(host=controller_url)
+        
+        # Attempt to connect
+        if communicator.connect_websocket():
+            print("Successfully connected to controller for sync")
+            
+            # Create macro manager with specified path
+            macro_manager = MacroManager(macros_directory=macros_path)
+            
+            # Perform sync
+            if macro_manager.sync_from_controller(communicator):
+                print("Macro synchronization completed successfully")
+            else:
+                print("Macro synchronization failed")
+            
+            # Clean up
+            communicator.close()
+        else:
+            print("Failed to connect to controller for sync")
+            
+    except Exception as e:
+        print(f"Error during startup macro sync: {str(e)}")
+        
+def load_preferences() -> dict:
+    """Load application preferences from configuration."""
+    config = get_config()
+    return {
+        "controller_url": config.get("connection.host", "localhost"),
+        "macros_path": config.get("paths.external_macros", "macros")
+    }
 
 def check_dependencies():
     """Check if required dependencies are available."""
@@ -110,4 +148,6 @@ def main():
             app.exit_application()
 
 if __name__ == "__main__":
+    preferences = load_preferences()
+    sync_macros_on_startup(preferences["controller_url"], preferences["macros_path"])
     main()
