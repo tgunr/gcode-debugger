@@ -1,0 +1,140 @@
+.
+├── __init__.py
+├── __pycache__
+│   ├── __init__.cpython-312.pyc
+│   ├── test_api_endpoints.cpython-312-pytest-8.3.5.pyc
+│   ├── test_both_modes.cpython-312-pytest-8.3.5.pyc
+│   ├── test_gui_mdi.cpython-312-pytest-8.3.5.pyc
+│   ├── test_local_macros.cpython-312-pytest-8.3.5.pyc
+│   ├── test_mdi_fix.cpython-312-pytest-8.3.5.pyc
+│   ├── test_mdi_with_reconnect.cpython-312-pytest-8.3.5.pyc
+│   ├── test_mdi.cpython-312-pytest-8.3.5.pyc
+│   ├── test_movement_validation.cpython-312-pytest-8.3.5.pyc
+│   ├── test_msg_debug_fixed.cpython-312-pytest-8.3.5.pyc
+│   ├── test_msg_debug.cpython-312-pytest-8.3.5.pyc
+│   ├── test_rest_mdi.cpython-312-pytest-8.3.5.pyc
+│   └── test_tkinter.cpython-312-pytest-8.3.5.pyc
+├── check_tkinter.py
+├── core
+│   ├── __init__.py
+│   ├── __pycache__
+│   │   ├── __init__.cpython-312.pyc
+│   │   ├── __init__.cpython-313.pyc
+│   │   ├── communication.cpython-312.pyc
+│   │   ├── communication.cpython-313.pyc
+│   │   ├── config.cpython-312.pyc
+│   │   ├── config.cpython-313.pyc
+│   │   ├── debugger.cpython-312.pyc
+│   │   ├── debugger.cpython-313.pyc
+│   │   ├── gcode_parser.cpython-312.pyc
+│   │   ├── gcode_parser.cpython-313.pyc
+│   │   ├── local_macro_manager.cpython-312.pyc
+│   │   ├── local_macro_manager.cpython-313.pyc
+│   │   ├── macro_manager.cpython-312.pyc
+│   │   ├── macro_manager.cpython-313.pyc
+│   │   ├── msg_debug_handler.cpython-312.pyc
+│   │   └── msg_debug_handler.cpython-313.pyc
+│   ├── communication.py
+│   ├── config.py
+│   ├── debugger.py
+│   ├── gcode_parser.py
+│   ├── local_macro_manager.py
+│   ├── macro_manager.py
+│   └── msg_debug_handler.py
+├── docs
+│   ├── conversation_summary_2025-07-20.md
+│   └── macro_panel_updates_2025-07-20.md
+├── gpt5-debug.sh
+├── gui
+│   ├── __init__.py
+│   ├── __pycache__
+│   │   ├── __init__.cpython-312.pyc
+│   │   ├── __init__.cpython-313.pyc
+│   │   ├── code_editor.cpython-312.pyc
+│   │   ├── code_editor.cpython-313.pyc
+│   │   ├── control_panel.cpython-312.pyc
+│   │   ├── control_panel.cpython-313.pyc
+│   │   ├── macro_panel.cpython-312.pyc
+│   │   ├── macro_panel.cpython-313.pyc
+│   │   ├── main_window.cpython-312.pyc
+│   │   ├── main_window.cpython-313.pyc
+│   │   ├── preferences_dialog.cpython-312.pyc
+│   │   ├── status_panel.cpython-312.pyc
+│   │   └── status_panel.cpython-313.pyc
+│   ├── code_editor.py
+│   ├── control_panel.py
+│   ├── macro_panel.py
+│   ├── main_window.py
+│   ├── preferences_dialog.py
+│   └── status_panel.py
+├── icons
+│   └── generate_icons.py
+├── Issue.txt
+├── local_macros
+│   └── local_macros.json
+├── local_macros.json
+├── logs
+├── macros
+│   ├── Home All.json
+│   ├── Probe Z.json
+│   ├── Safe Z.json
+│   ├── Spindle Off.json
+│   ├── Spindle On.json
+│   ├── Tool Change.json
+│   └── Zero All.json
+├── main.py
+├── mcp-shell.log
+├── MSG_DEBUG_FIX_SUMMARY.md
+├── README.md
+├── requirements.txt
+├── resources
+│   └── icons
+│       ├── file.png
+│       ├── folder.png
+│       └── macro.png
+├── sample_test.gcode
+├── test_api_endpoints.py
+├── test_both_modes.py
+├── test_gui_mdi.py
+├── test_local_macros
+│   └── local_macros.json
+├── test_local_macros.py
+├── test_mdi_fix.py
+├── test_mdi_with_reconnect.py
+├── test_mdi.py
+├── test_movement_validation.py
+├── test_msg_debug_fixed.py
+├── test_msg_debug.py
+├── test_rest_mdi.py
+├── test_tkinter.py
+├── tests
+│   ├── __pycache__
+│   │   ├── test_list_directory.cpython-312-pytest-8.3.5.pyc
+│   │   └── test_macro_manager.cpython-312-pytest-8.3.5.pyc
+│   ├── test_list_directory.py
+│   └── test_macro_manager.py
+├── tkinter_diagnostic.log
+├── tree.txt
+├── venv
+│   ├── bin
+│   │   ├── activate
+│   │   ├── activate.csh
+│   │   ├── activate.fish
+│   │   ├── Activate.ps1
+│   │   ├── normalizer
+│   │   ├── pip
+│   │   ├── pip3
+│   │   ├── pip3.12
+│   │   ├── pygmentize
+│   │   ├── python -> python3
+│   │   ├── python3 -> /Users/davec/.pyenv/versions/3.12.9/bin/python3
+│   │   ├── python3.12 -> python3
+│   │   └── wsdump
+│   ├── include
+│   │   └── python3.12
+│   ├── lib
+│   │   └── python3.12
+│   └── pyvenv.cfg
+└── websocket_test.log
+
+22 directories, 116 files
