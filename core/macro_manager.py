@@ -213,9 +213,9 @@ class MacroManager:
         """Save all macros to files."""
         for name in self.macros:
             self.save_macro(name)
-    
+
     def sync_from_controller(self, communicator) -> bool:
-        """Sync macros from the controller to the local directory.
+        """Sync macros from the controller to the local directory, mirroring the folder structure.
         
         Args:
             communicator: BBCtrlCommunicator instance for controller communication
@@ -223,7 +223,7 @@ class MacroManager:
         Returns:
             bool: True if sync was successful, False otherwise
         """
-        print("DEBUG: Starting sync_from_controller")
+        print("DEBUG: Starting sync_from_controller with structure mirroring")
         try:
             # Ensure directory exists and is writable
             print(f"DEBUG: Ensuring directory exists: {self.macros_directory}")
@@ -236,147 +236,89 @@ class MacroManager:
             # Get macros from controller
             print("DEBUG: Fetching macros from controller...")
             controller_macros = communicator.get_macros()
-
-            # --- Compatibility adapter ---------------------------------------------------
-            # communicator.get_macros() used to return a dict keyed by macro name but now
-            # returns a list of macro records.  The following normalises either shape to
-            # the original dict format expected by the rest of this method.
-            if isinstance(controller_macros, list):
-                tmp = {}
-                for m in controller_macros:
-                    if isinstance(m, dict):
-                        name = m.get("name")
-                        data = m
-                    else:
-                        name = getattr(m, "name", None)
-                        data = m.__dict__ if hasattr(m, "__dict__") else {}
-                    if not name:
-                        continue
-                    tmp[name] = data
-                controller_macros = tmp
-
-            # Validate payload after normalisation
-            if controller_macros is None or not isinstance(controller_macros, dict):
-                print("WARNING: No macros found on controller or unsupported payload format")
+            
+            if not controller_macros:
+                print("WARNING: No macros found on controller")
                 return False
                 
             print(f"DEBUG: Found {len(controller_macros)} macros on controller")
-            if controller_macros:
-                print(f"DEBUG: Controller macro names: {list(controller_macros.keys())}")
             
-            synced_macros = set()
+            synced_count = 0
+            failed_count = 0
             
-            # Process each macro from controller
-            for macro_name, macro_data in controller_macros.items():
+            # Process each macro
+            for macro in controller_macros:
                 try:
-                    print(f"DEBUG: Processing macro: {macro_name}")
-                    # Skip invalid macro names
-                    if not macro_name or not isinstance(macro_name, str):
-                        print(f"WARNING: Skipping invalid macro name: {macro_name}")
+                    # Get the relative path from the macro
+                    path_on_controller = macro.path
+                    if not path_on_controller:
+                        print(f"WARNING: Skipping macro {macro.name} - no path")
+                        failed_count += 1
                         continue
-                        
-                    print(f"DEBUG: Macro data type: {type(macro_data).__name__}")
-                    # Convert controller macro format to our format if needed
-                    if not isinstance(macro_data, dict):
-                        print("DEBUG: Converting non-dict macro data to standard format")
-                        macro_data = {
-                            'name': macro_name,
-                            'commands': macro_data if isinstance(macro_data, list) else [str(macro_data)],
-                            'description': f"Synced from controller: {macro_name}",
-                            'category': 'system',
-                            'color': '#e6e6e6',
-                            'hotkey': ''
-                        }
                     
-                    # Ensure commands is a list of strings
-                    if 'commands' not in macro_data:
-                        macro_data['commands'] = []
-                    elif not isinstance(macro_data['commands'], list):
-                        macro_data['commands'] = [str(macro_data['commands'])]
-                    else:
-                        macro_data['commands'] = [str(cmd) for cmd in macro_data['commands']]
+                    # Strip leading "Home/" if present to mimic structure under Home
+                    if path_on_controller.startswith("Home/"):
+                        path_on_controller = path_on_controller[5:]  # Remove "Home/"
+                    elif path_on_controller == "Home":
+                        path_on_controller = ""
                     
-                    # Set default values for required fields
+                    # Construct full local path, mirroring controller structure
+                    full_local_path = os.path.join(self.macros_directory, path_on_controller)
+                    dir_path = os.path.dirname(full_local_path)
+                    
+                    # Create directories if needed
+                    os.makedirs(dir_path, exist_ok=True)
+                    
+                    # Read raw content from controller using original path
+                    content = communicator.read_file(macro.path)
+                    if content is None:
+                        print(f"WARNING: Failed to read content for {macro.path}")
+                        failed_count += 1
+                        continue
+                    
+                    # Write raw content to local file
+                    with open(full_local_path, 'w') as f:
+                        f.write(content)
+                    
+                    print(f"DEBUG: Synced {macro.name} to {full_local_path}")
+                    
+                    # Update in-memory macro
+                    commands = [line.strip() for line in content.split('\n') if line.strip() and not line.strip().startswith(';')]
+                    
                     current_time = datetime.now().isoformat()
-                    print(f"DEBUG: Setting default values for macro: {macro_name}")
-                    macro_data.setdefault('name', macro_name)
-                    macro_data.setdefault('description', f"Synced from controller: {macro_name}")
-                    macro_data.setdefault('created_date', current_time)
-                    macro_data.setdefault('modified_date', current_time)
-                    macro_data.setdefault('category', 'system')
-                    macro_data.setdefault('color', '#e6e6e6')
-                    macro_data.setdefault('hotkey', '')
+                    macro_data = {
+                        'name': macro.name,
+                        'description': macro.description or f"Synced from controller: {macro.name}",
+                        'commands': commands,
+                        'created_date': current_time,
+                        'modified_date': current_time,
+                        'category': macro.category or 'system',
+                        'color': '#e6e6e6',
+                        'hotkey': '',
+                        'path': path_on_controller
+                    }
                     
-                    # Ensure commands is a list of strings
-                    if 'commands' not in macro_data:
-                        macro_data['commands'] = []
-                        print("DEBUG: No commands found in macro, initializing empty list")
-                    elif not isinstance(macro_data['commands'], list):
-                        macro_data['commands'] = [str(macro_data['commands'])]
-                        print("DEBUG: Converted non-list commands to list")
+                    if macro.name in self.macros:
+                        self.update_macro(**macro_data)
                     else:
-                        macro_data['commands'] = [str(cmd) for cmd in macro_data['commands']]
+                        self.create_macro(**macro_data)
                     
-                    print(f"DEBUG: Macro {macro_name} has {len(macro_data['commands'])} commands")
-                    
-                    # Create or update the macro
-                    if macro_name in self.macros:
-                        print(f"DEBUG: Updating existing macro: {macro_name}")
-                        # Update existing macro
-                        self.update_macro(
-                            name=macro_name,
-                            commands=macro_data['commands'],
-                            description=macro_data.get('description', ''),
-                            category=macro_data.get('category', 'system'),
-                            color=macro_data.get('color', '#e6e6e6'),
-                            hotkey=macro_data.get('hotkey', '')
-                        )
-                        action = "Updated"
-                    else:
-                        print(f"DEBUG: Creating new macro: {macro_name}")
-                        # Create new macro
-                        self.create_macro(
-                            name=macro_name,
-                            commands=macro_data['commands'],
-                            description=macro_data.get('description', ''),
-                            category=macro_data.get('category', 'system'),
-                            color=macro_data.get('color', '#e6e6e6'),
-                            hotkey=macro_data.get('hotkey', '')
-                        )
-                        action = "Created"
-                    
-                    synced_macros.add(macro_name)
-                    print(f"{action} macro: {macro_name}")
+                    synced_count += 1
                     
                 except Exception as e:
-                    print(f"ERROR: Failed to sync macro {macro_name}: {e}")
+                    print(f"ERROR: Failed to sync macro {macro.name}: {str(e)}")
+                    failed_count += 1
             
-            print(f"DEBUG: Checking for local macros to remove (synced: {len(synced_macros)} macros)")
-            # Remove any local macros that don't exist on the controller
-            local_macros = set(self.macros.keys())
-            macros_to_remove = local_macros - synced_macros
-            print(f"DEBUG: Found {len(macros_to_remove)} local macros to remove")
+            # Remove local files not present on controller (optional - comment out if not desired)
+            # self._cleanup_removed_macros(controller_macros)
             
-            for macro_name in macros_to_remove:
-                try:
-                    print(f"DEBUG: Removing local macro not on controller: {macro_name}")
-                    if self.delete_macro(macro_name):
-                        print(f"Removed local macro not on controller: {macro_name}")
-                    else:
-                        print(f"WARNING: Failed to remove local macro: {macro_name}")
-                except Exception as e:
-                    print(f"ERROR: Failed to remove local macro {macro_name}: {e}")
-            
-            # Reload macros from disk to update our in-memory state
-            print("DEBUG: Reloading macros from disk...")
-            self.load_macros()
-            print(f"DEBUG: Sync completed. Total macros: {len(self.macros)}")
-            return True
+            print(f"DEBUG: Sync completed: {synced_count} successful, {failed_count} failed")
+            return failed_count == 0
             
         except Exception as e:
+            print(f"ERROR: Failed to sync macros from controller: {str(e)}")
             import traceback
-            error_msg = f"ERROR: Failed to sync macros from controller: {e}\n{traceback.format_exc()}"
-            print(error_msg)
+            traceback.print_exc()
             return False
     
     def sync_bidirectional(self, communicator, external_dir: Optional[str] = None, epsilon: float = 1.0) -> bool:
