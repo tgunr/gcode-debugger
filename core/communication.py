@@ -929,7 +929,7 @@ class BBCtrlCommunicator:
         """
         try:
             # Get the file content
-            url = f"{self.base_url}/api/fs/file/{requests.utils.quote(path)}"
+            url = f"{self.base_url}/api/fs/{requests.utils.quote(path, safe='/')}"
             response = requests.get(url, timeout=10)
             
             if response.status_code == 200:
@@ -1203,11 +1203,9 @@ class BBCtrlCommunicator:
             File contents as string, or None if the file could not be read
         """
         try:
-            # Ensure file_path is properly URL-encoded
-            # Use urllib.parse.quote to handle spaces and other special characters
             from urllib.parse import quote
-            encoded_path = quote(file_path, safe='/:')
-            url = f'{self.base_url}/api/fs/file/{encoded_path}'
+            encoded_path = quote(file_path, safe='/')
+            url = f'{self.base_url}/api/fs/{encoded_path}'
             print(f"DEBUG: Reading file: {url}")
             
             response = requests.get(url, timeout=10)
