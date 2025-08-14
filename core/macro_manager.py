@@ -31,7 +31,9 @@ class Macro:
         return getattr(self, key)
 
 class MacroManager:
-    """Manages G-code macros for the debugger."""
+    """Manages G-code macros for the debugger.
+    Metadata (.json) is stored under macros/.meta while raw macro files mirror the controller's folder structure under macros/.
+    """
     
     def __init__(self, *args, **kwargs):
         """
@@ -64,15 +66,17 @@ class MacroManager:
 
         # Preserve unknown kwargs for future compatibility but ignore for now
         self.macros_directory = os.path.abspath(os.path.expanduser(str(macros_dir)))
+        self.meta_directory = os.path.join(self.macros_directory, ".meta")
         self.macros: Dict[str, Macro] = {}
         self.categories = ["system", "user", "homing", "tool_change", "probing", "custom"]
 
         print(f"DEBUG: Initializing MacroManager with directory: {self.macros_directory} "
-              f"(communicator={'set' if self.communicator else 'none'})")
+              f"(communicator={'set' if self.communicator else 'none'}), meta={self.meta_directory}")
 
         try:
             # Ensure macros directory exists and is writable ------------------------
             os.makedirs(self.macros_directory, exist_ok=True)
+            os.makedirs(self.meta_directory, exist_ok=True)
             if not os.access(self.macros_directory, os.W_OK):
                 print(f"WARNING: Directory is not writable: {self.macros_directory}")
 
@@ -161,14 +165,14 @@ class MacroManager:
     def get_all_macros(self) -> List[Macro]:
         """Get all macros."""
         return list(self.macros.values())
-    
+        
     def save_macro(self, name: str) -> bool:
         """Save a macro to file."""
         if name not in self.macros:
             return False
-        
+
         try:
-            filepath = os.path.join(self.macros_directory, f"{name}.json")
+            filepath = os.path.join(self.meta_directory, f"{name}.json")
             with open(filepath, 'w') as f:
                 json.dump(asdict(self.macros[name]), f, indent=2)
             return True
@@ -178,7 +182,7 @@ class MacroManager:
     def load_macro(self, name: str) -> bool:
         """Load a macro from file."""
         try:
-            filepath = os.path.join(self.macros_directory, f"{name}.json")
+            filepath = os.path.join(self.meta_directory, f"{name}.json")
             if not os.path.exists(filepath):
                 return False
             
@@ -193,13 +197,13 @@ class MacroManager:
     
     def load_macros(self):
         """Load all macros from the macros directory."""
-        print(f"DEBUG: Loading macros from directory: {os.path.abspath(self.macros_directory)}")
-        if not os.path.exists(self.macros_directory):
-            print(f"ERROR: Macros directory does not exist: {os.path.abspath(self.macros_directory)}")
+        print(f"DEBUG: Loading macros (metadata) from: {os.path.abspath(self.meta_directory)}")
+        if not os.path.exists(self.meta_directory):
+            print(f"ERROR: Meta directory does not exist: {os.path.abspath(self.meta_directory)}")
             return
         
         file_count = 0
-        for filename in os.listdir(self.macros_directory):
+        for filename in os.listdir(self.meta_directory):
             if filename.endswith('.json'):
                 file_count += 1
                 name = filename[:-5]  # Remove .json extension
