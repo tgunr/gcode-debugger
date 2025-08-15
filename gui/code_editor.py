@@ -301,6 +301,12 @@ class CodeEditor(ttk.Frame):
                 end_index = f"{line_num}.end"
                 self.text_widget.tag_add('modified', start_index, end_index)
     
+    def highlight_all(self) -> None:
+        """
+        Apply syntax highlighting to the entire editor content.
+        """
+        self._apply_syntax_highlighting()
+
     def highlight_current_line(self, line_number: int):
         """Highlight the current execution line."""
         # Remove previous current line highlighting
