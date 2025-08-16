@@ -131,6 +131,7 @@ class GCodeDebugger:
         # Execute the line
         if self._execute_line(current_line):
             self.current_line_index += 1
+            print(f"DEBUG: Stepped to index {self.current_line_index}, line number {self.get_current_line_number()}")
             self._notify_line_changed()
             return True
         
@@ -375,8 +376,9 @@ class GCodeDebugger:
     
     def _notify_line_changed(self):
         """Notify that the current line has changed."""
+        line_num = self.get_current_line_number()
         if self.line_changed_callback:
-            self.line_changed_callback(self.get_current_line_number())
+            self.line_changed_callback(line_num)
     
     def _notify_state_changed(self):
         """Notify that the debugger state has changed."""

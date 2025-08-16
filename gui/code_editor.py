@@ -37,7 +37,7 @@ class CodeEditor(ttk.Frame):
             'coordinates': '#b5cea8', # Green for coordinates
             'comments': '#6a9955',    # Dark green for comments
             'numbers': '#b5cea8',     # Light green for numbers
-            'current_line': '#3a3d41', # Dark gray for current line
+            'current_line': '#264f78', # Blue highlight for current line (more visible)
             'breakpoint': '#ff0000',   # Red for breakpoints
             'line_numbers': '#858585', # Gray for line numbers
             'modified': '#ffff99'      # Yellow for modified lines

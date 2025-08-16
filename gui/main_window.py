@@ -128,19 +128,29 @@ class MainWindow:
 
     def _thread_safe_callback(self, func, *args, **kwargs):
         """Ensure func runs on the main thread."""
+        print(f"DEBUG: _thread_safe_callback called for {func.__name__} from thread {threading.get_ident()}")
         if not hasattr(self, 'ui_queue'):
             self.ui_queue = queue.Queue()
             self.root.after(100, self._process_ui_queue)
         self.ui_queue.put((func, args, kwargs))
+        print(f"DEBUG: Queued {func.__name__}, queue size now {self.ui_queue.qsize()}")
 
     def _process_ui_queue(self):
         """Process UI updates from the queue."""
+        print(f"DEBUG: _process_ui_queue called, queue size {self.ui_queue.qsize() if hasattr(self, 'ui_queue') else 0}")
         try:
+            processed = 0
             while not self.ui_queue.empty():
                 func, args, kwargs = self.ui_queue.get_nowait()
+                print(f"DEBUG: Processing queued {func.__name__}")
                 func(*args, **kwargs)
+                processed += 1
+            if processed > 0:
+                print(f"DEBUG: Processed {processed} queued updates")
         except queue.Empty:
             pass
+        except Exception as e:
+            print(f"ERROR in _process_ui_queue: {e}")
         finally:
             self.root.after(100, self._process_ui_queue)
     

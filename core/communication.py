@@ -135,7 +135,8 @@ class BBCtrlCommunicator:
             # Check if we need to schedule this on the main thread
             if self._callback_scheduler:
                 try:
-                    print(f"DEBUG: Scheduling callback {callback_name} on main thread")
+                    if callback == self.state_callback and self.debug_state_changes:
+                        print(f"DEBUG: Scheduling callback {callback_name} on main thread")
                     self._callback_scheduler(callback, *args)
                 except Exception as e:
                     error_msg = f"Error scheduling callback {callback_name}: {str(e)}"
