@@ -644,7 +644,7 @@ class MacroPanel(ttk.LabelFrame):
     def _open_file(self, file_path):
         """Open a file for viewing/editing in a thread-safe way."""
         main_window = self._get_main_window()
-        if not main_window or not hasattr(main_window, 'code_editor'):
+        if not main_window or not hasattr(main_window, 'code_editor') or not hasattr(main_window, 'debugger'):
             self._queue_ui_update(messagebox.showerror, "Error", "Could not access the code editor.")
             return
 
@@ -653,43 +653,52 @@ class MacroPanel(ttk.LabelFrame):
             try:
                 content = self.comm.read_file(file_path)
                 if content is None:
-                    # File not found or other error a la communication.py
                     error_msg = f"Failed to read file '{os.path.basename(file_path)}' from controller."
                     self._queue_ui_update(messagebox.showerror, "Error", error_msg)
                     return
                 
-                self._queue_ui_update(self._update_editor_content, file_path, content)
+                # Create temporary file
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.gcode', delete=False) as temp_file:
+                    temp_file.write(content)
+                    temp_path = temp_file.name
+                
+                # Queue the loading on UI thread
+                self._queue_ui_update(self._load_file_into_debugger, temp_path, file_path)
             except Exception as e:
                 error_msg = f"An unexpected error occurred while opening '{os.path.basename(file_path)}':\n\n{str(e)}"
                 self._queue_ui_update(messagebox.showerror, "Error", error_msg)
 
         threading.Thread(target=do_open_file, daemon=True, name=f"OpenFile-{os.path.basename(file_path)}").start()
 
-    def _update_editor_content(self, file_path, content):
-        """Update the code editor with file content. Must run on UI thread."""
+    def _load_file_into_debugger(self, temp_path, original_path):
+        """Load the temporary file into the debugger and clean up. Runs on UI thread."""
         main_window = self._get_main_window()
-        if not main_window or not hasattr(main_window, 'code_editor'):
+        if not main_window:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
             return
 
         try:
-            # Clear and populate the editor
-            main_window.code_editor.text_widget.delete('1.0', tk.END)
-            main_window.code_editor.text_widget.insert('1.0', content)
-            
-            # Update window title and status
-            file_name = os.path.basename(file_path)
-            main_window.current_file_path = file_path
-            if hasattr(main_window, 'file_status'):
-                main_window.file_status.set(f"Viewing: {file_name}")
-            
-            # Mark as clean
-            if hasattr(main_window, 'mark_editor_clean'):
-                main_window.mark_editor_clean()
+            if main_window.debugger.load_file(temp_path):
+                main_window.code_editor.load_gcode(main_window.debugger.parser)
                 
-            # Apply syntax highlighting
-            main_window.code_editor.highlight_all()
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to update editor: {str(e)}")
+                # Update window title and status
+                file_name = os.path.basename(original_path)
+                main_window.current_file_path = original_path
+                if hasattr(main_window, 'file_status'):
+                    main_window.file_status.set(f"Viewing: {file_name} (Controller File)")
+                
+                # Mark as clean
+                if hasattr(main_window.code_editor, 'clear_modified_flag'):
+                    main_window.code_editor.clear_modified_flag()
+                
+                # Apply syntax highlighting
+                main_window.code_editor.highlight_all()
+            else:
+                messagebox.showerror("Error", "Failed to load file into debugger.")
+        finally:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
             
     def _load_icon(self, icon_name):
         """
@@ -923,8 +932,8 @@ class MacroPanel(ttk.LabelFrame):
         
         # Confirm deletion
         if not messagebox.askyesno("Confirm Delete", 
-                                 f"Are you sure you want to delete {item_type} '{full_path}'?",
-                                 parent=self):
+            f"Are you sure you want to delete {item_type} '{full_path}'?",
+            parent=self):
             return
             
         try:
@@ -958,9 +967,9 @@ class MacroPanel(ttk.LabelFrame):
         
         # Get new name from user
         new_name = simpledialog.askstring("Rename", 
-                                         f"Enter new name for {item_type}:",
-                                         initialvalue=old_name,
-                                         parent=self)
+        f"Enter new name for {item_type}:",
+        initialvalue=old_name,
+        parent=self)
         
         if not new_name or new_name == old_name:
             return  # User cancelled or didn't change the name
