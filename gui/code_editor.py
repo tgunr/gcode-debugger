@@ -46,8 +46,11 @@ class CodeEditor(ttk.Frame):
         self.setup_ui()
         self.setup_syntax_patterns()
         
-        # Set initial original content to match empty text widget
-        self._original_content = self.text_widget.get('1.0', tk.END)
+        # Set initial original content
+        self._original_content = self.text_widget.get('1.0', 'end-1c')
+        
+        # Reset modified flag
+        self.text_widget.edit_modified(False)
     
     def setup_ui(self):
         """Setup the user interface."""
@@ -170,13 +173,14 @@ class CodeEditor(ttk.Frame):
     
     def has_unsaved_changes(self) -> bool:
         """Check if there are unsaved changes in the editor."""
-        current_content = self.text_widget.get('1.0', tk.END)
+        current_content = self.text_widget.get('1.0', 'end-1c')
         return current_content != self._original_content
     
     def clear_modified_flag(self):
         """Clear the modified flag and update the original content."""
         self._is_modified = False
-        self._original_content = self.text_widget.get('1.0', tk.END)
+        self._original_content = self.text_widget.get('1.0', 'end-1c')
+        print(f"DEBUG: clear_modified_flag set _original_content len: {len(self._original_content)}, last 10: {repr(self._original_content[-10:])}")
         self._mark_modified_lines()
     
     def load_gcode(self, parser: GCodeParser):
@@ -186,14 +190,19 @@ class CodeEditor(ttk.Frame):
         # Clear existing content
         self.text_widget.delete('1.0', tk.END)
         
-        # Load lines
-        for line in parser.lines:
-            line_content = line.original + '\n'
-            self.text_widget.insert(tk.END, line_content)
+        # Load lines without adding extra newline to the last line
+        if parser.lines:
+            for line in parser.lines[:-1]:
+                self.text_widget.insert(tk.END, line.original + '\n')
+            self.text_widget.insert(tk.END, parser.lines[-1].original)
         
-        # Store original content from the actual widget state
-        self._original_content = self.text_widget.get('1.0', tk.END)
+        # Store original content
+        self._original_content = self.text_widget.get('1.0', 'end-1c')
+        print(f"DEBUG: load_gcode set _original_content len: {len(self._original_content)}, last 10: {repr(self._original_content[-10:])}")
         self._is_modified = False
+        
+        # Reset modified flag
+        self.text_widget.edit_modified(False)
         
         # Update line numbers and syntax highlighting
         self._update_line_numbers()
@@ -210,8 +219,12 @@ class CodeEditor(ttk.Frame):
         
         # Insert content
         self.text_widget.insert('1.0', content)
-        self._original_content = self.text_widget.get('1.0', tk.END)
+        self._original_content = self.text_widget.get('1.0', 'end-1c')
+        print(f"DEBUG: load_text_content set _original_content len: {len(self._original_content)}, last 10: {repr(self._original_content[-10:])}")
         self._is_modified = False
+        
+        # Reset modified flag
+        self.text_widget.edit_modified(False)
         
         # Clear line numbers since we don't have a parser
         self.line_numbers.config(state='normal')
@@ -256,7 +269,7 @@ class CodeEditor(ttk.Frame):
     
     def _apply_syntax_highlighting(self):
         """Apply syntax highlighting to the text."""
-        content = self.text_widget.get('1.0', tk.END)
+        content = self.text_widget.get('1.0', 'end-1c')
         lines = content.split('\n')
         
         # Clear existing tags
@@ -283,7 +296,7 @@ class CodeEditor(ttk.Frame):
             return
             
         # Get current content for comparison
-        current_content = self.text_widget.get('1.0', tk.END).splitlines()
+        current_content = self.text_widget.get('1.0', 'end-1c').splitlines()
         original_lines = self._original_content.splitlines()
         
         # Highlight modified lines
@@ -448,6 +461,8 @@ class CodeEditor(ttk.Frame):
         
         # Update modified lines highlighting
         self.after_idle(self._mark_modified_lines)
+        
+        # Update original content for comparison (optional, if needed)
     
     def _on_click(self, event):
         """Handle mouse clicks."""

@@ -15,6 +15,7 @@ import threading
 import time
 import requests
 import queue
+import tempfile
 
 # Set up logging
 logging.basicConfig(level=logging.WARNING)  # Set to WARNING to reduce debug output
@@ -1201,31 +1202,45 @@ class MacroPanel(ttk.LabelFrame):
 
         def _is_dirty():
             """Detect whether the editor has unsaved changes using several fallbacks."""
+            print("DEBUG: Checking if editor is dirty")
             try:
                 # Preferred explicit APIs
                 if hasattr(editor, 'has_unsaved_changes') and callable(editor.has_unsaved_changes):
+                    print("DEBUG: Using has_unsaved_changes")
                     if editor.has_unsaved_changes():
+                        print("DEBUG: has_unsaved_changes returned True")
                         return True
+                    else:
+                        print("DEBUG: has_unsaved_changes returned False")
                 if hasattr(editor, 'is_editor_dirty') and callable(editor.is_editor_dirty):
+                    print("DEBUG: Using is_editor_dirty")
                     if editor.is_editor_dirty():
+                        print("DEBUG: is_editor_dirty returned True")
                         return True
-            except Exception:
-                pass
+                    else:
+                        print("DEBUG: is_editor_dirty returned False")
+            except Exception as e:
+                print(f"DEBUG: Exception in explicit APIs: {e}")
 
             # Fallback: Tk Text widget modified flag
             try:
                 if hasattr(editor, 'text_widget') and hasattr(editor.text_widget, 'edit_modified'):
-                    return bool(editor.text_widget.edit_modified())
-            except Exception:
-                pass
+                    modified = bool(editor.text_widget.edit_modified())
+                    print(f"DEBUG: Tk edit_modified: {modified}")
+                    return modified
+            except Exception as e:
+                print(f"DEBUG: Exception in Tk fallback: {e}")
 
             # Last resort: ask the main window, if it exposes a helper
             try:
                 if hasattr(main_window, 'is_editor_dirty') and callable(main_window.is_editor_dirty):
-                    return bool(main_window.is_editor_dirty())
-            except Exception:
-                pass
+                    dirty = bool(main_window.is_editor_dirty())
+                    print(f"DEBUG: main_window is_editor_dirty: {dirty}")
+                    return dirty
+            except Exception as e:
+                print(f"DEBUG: Exception in main_window fallback: {e}")
 
+            print("DEBUG: All checks passed, returning False")
             return False
 
         try:
