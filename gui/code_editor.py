@@ -211,6 +211,8 @@ class CodeEditor(ttk.Frame):
         
         # Insert content
         self.text_widget.insert('1.0', content)
+        self._original_content = self.text_widget.get('1.0', tk.END)
+        self._is_modified = False
         
         # Clear line numbers since we don't have a parser
         self.line_numbers.config(state='normal')
