@@ -79,6 +79,7 @@ class BBCtrlCommunicator:
         
         # MSG/DEBUG handler for local processing
         self.msg_debug_handler = MsgDebugHandler(self._handle_msg_debug_output)
+        self.debug_state_changes = False
 
     """Handles WebSocket and HTTP communication with Buildbotics controller."""
     # (Removed duplicate __init__ method)
@@ -128,7 +129,8 @@ class BBCtrlCommunicator:
                 print(f"WARNING: Could not determine callback name: {e}")
             
             args_str = ', '.join(repr(arg) for arg in args)
-            print(f"DEBUG: _call_callback for {callback_name}({args_str}) from thread {thread_name} ({thread_id})")
+            if callback == self.state_callback and self.debug_state_changes:
+                print(f"DEBUG: _call_callback for {callback_name}({args_str}) from thread {thread_name} ({thread_id})")
             
             # Check if we need to schedule this on the main thread
             if self._callback_scheduler:
