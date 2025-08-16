@@ -743,8 +743,9 @@ class BBCtrlCommunicator:
             # Only forward concise messages to the UI to avoid huge dumps that
             # can crash Tk. Skip full-state dicts; just show heartbeats.
             if isinstance(data, dict) and data.keys() == {'heartbeat'}:
+                self._request_state()  # Poll full status on heartbeat
                 if self.message_callback:
-                    self._call_callback(self.message_callback, 
+                    self._call_callback(self.message_callback,
                                      f"Heartbeat: {data['heartbeat']}")
             
         except Exception as e:
