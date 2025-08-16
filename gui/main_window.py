@@ -128,31 +128,41 @@ class MainWindow:
 
     def _thread_safe_callback(self, func, *args, **kwargs):
         """Ensure func runs on the main thread."""
-        print(f"DEBUG: _thread_safe_callback called for {func.__name__} from thread {threading.get_ident()}")
-        if not hasattr(self, 'ui_queue'):
-            self.ui_queue = queue.Queue()
-            self.root.after(100, self._process_ui_queue)
-        self.ui_queue.put((func, args, kwargs))
-        print(f"DEBUG: Queued {func.__name__}, queue size now {self.ui_queue.qsize()}")
+        # For debugging callbacks, execute immediately if on main thread
+        if threading.get_ident() == self._main_thread:
+            try:
+                func(*args, **kwargs)
+                return
+            except Exception as e:
+                print(f"ERROR in direct callback execution: {e}")
+        
+        # For other threads, use immediate scheduling for critical callbacks
+        if hasattr(func, '__name__') and func.__name__ in ['update', '_on_current_line_changed']:
+            # High priority - execute immediately
+            self.root.after_idle(lambda: func(*args, **kwargs))
+        else:
+            # Normal priority - use queue
+            if not hasattr(self, 'ui_queue'):
+                self.ui_queue = queue.Queue()
+                self.root.after(50, self._process_ui_queue)  # Faster processing
+            self.ui_queue.put((func, args, kwargs))
 
     def _process_ui_queue(self):
         """Process UI updates from the queue."""
-        print(f"DEBUG: _process_ui_queue called, queue size {self.ui_queue.qsize() if hasattr(self, 'ui_queue') else 0}")
         try:
             processed = 0
-            while not self.ui_queue.empty():
+            max_process = 10  # Limit processing per cycle to prevent blocking
+            while not self.ui_queue.empty() and processed < max_process:
                 func, args, kwargs = self.ui_queue.get_nowait()
-                print(f"DEBUG: Processing queued {func.__name__}")
                 func(*args, **kwargs)
                 processed += 1
-            if processed > 0:
-                print(f"DEBUG: Processed {processed} queued updates")
         except queue.Empty:
             pass
         except Exception as e:
             print(f"ERROR in _process_ui_queue: {e}")
         finally:
-            self.root.after(100, self._process_ui_queue)
+            # Schedule next processing cycle faster
+            self.root.after(50, self._process_ui_queue)
     
     def _update_macro_ui(self):
         """Safely update the macro UI components."""
@@ -973,7 +983,12 @@ class MainWindow:
             if self.code_editor:
                 self.code_editor.highlight_current_line(line_number)
             self._update_progress_display()
-        self._thread_safe_callback(update)
+        
+        # Execute immediately if on main thread, otherwise schedule with high priority
+        if threading.get_ident() == self._main_thread:
+            update()
+        else:
+            self.root.after_idle(update)
     
     def _on_debug_state_changed(self, debug_state):
         """Handle debug state changes."""
