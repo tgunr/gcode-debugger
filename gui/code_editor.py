@@ -45,6 +45,9 @@ class CodeEditor(ttk.Frame):
         
         self.setup_ui()
         self.setup_syntax_patterns()
+        
+        # Set initial original content to match empty text widget
+        self._original_content = self.text_widget.get('1.0', tk.END)
     
     def setup_ui(self):
         """Setup the user interface."""
@@ -167,8 +170,6 @@ class CodeEditor(ttk.Frame):
     
     def has_unsaved_changes(self) -> bool:
         """Check if there are unsaved changes in the editor."""
-        if not self.parser:
-            return False
         current_content = self.text_widget.get('1.0', tk.END)
         return current_content != self._original_content
     
@@ -185,15 +186,13 @@ class CodeEditor(ttk.Frame):
         # Clear existing content
         self.text_widget.delete('1.0', tk.END)
         
-        # Load lines and build original content
-        original_content = []
+        # Load lines
         for line in parser.lines:
             line_content = line.original + '\n'
             self.text_widget.insert(tk.END, line_content)
-            original_content.append(line_content)
         
-        # Store original content for change tracking
-        self._original_content = ''.join(original_content)
+        # Store original content from the actual widget state
+        self._original_content = self.text_widget.get('1.0', tk.END)
         self._is_modified = False
         
         # Update line numbers and syntax highlighting
