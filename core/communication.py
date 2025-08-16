@@ -920,10 +920,10 @@ class BBCtrlCommunicator:
 
     def _get_macro_description(self, path: str) -> str:
         """Extract description from macro file content.
-        
+
         Args:
             path: Path to the macro file on the controller
-            
+
         Returns:
             Extracted description or empty string if not found
         """
@@ -931,7 +931,7 @@ class BBCtrlCommunicator:
             # Get the file content
             url = f"{self.base_url}/api/fs/{requests.utils.quote(path, safe='/')}"
             response = requests.get(url, timeout=10)
-            
+
             if response.status_code == 200:
                 content = response.text
                 # Look for description in the first few lines (common patterns)
@@ -951,7 +951,7 @@ class BBCtrlCommunicator:
                             return desc
         except Exception as e:
             print(f"WARNING: Could not get description for {path}: {str(e)}")
-        
+
         return ""  # Return empty string if no description found
     
     def _list_directory(self, path: str) -> List[Dict[str, Any]]:
@@ -1192,13 +1192,13 @@ class BBCtrlCommunicator:
             import traceback
             traceback.print_exc()
             return []
-            
+
     def read_file(self, file_path: str) -> Optional[str]:
         """Read the contents of a file from the controller.
         
         Args:
             file_path: Path to the file to read (relative to controller root)
-            
+        
         Returns:
             File contents as string, or None if the file could not be read
         """
@@ -1233,57 +1233,11 @@ class BBCtrlCommunicator:
             import traceback
             traceback.print_exc()
             return None
-            
-    def get_macros(self) -> List[Dict[str, Any]]:
-        """Fetch all macros from the controller's file system via REST API.
-        
-        This method searches for all .gcode files in the Home directory and all its subdirectories.
-        
-        Returns:
-            List of macro objects with required attributes for the UI
-        """
-        try:
-            macro_dict = self._find_macros_recursive('Home')
-            macros = []
-            for macro_name, macro_data in macro_dict.items():
-                macro = type('Macro', (), {
-                    'name': macro_name,
-                    'category': macro_data.get('category', 'uncategorized'),
-                    'description': macro_data.get('description', ''),
-                    'path': macro_data.get('path', ''),
-                    'modified': macro_data.get('modified', 0),
-                    'size': macro_data.get('size', 0)
-                })
-                macros.append(macro)
-                
-            return macros
-            
-        except requests.exceptions.RequestException as e:
-            error_msg = f"Request error fetching macros: {str(e)}"
-            print(f"ERROR: {error_msg}")
-            self._call_callback(self.error_callback, error_msg)
-            
-        except json.JSONDecodeError as e:
-            error_msg = f"Failed to parse directory listing JSON: {str(e)}"
-            print(f"ERROR: {error_msg}")
-            if 'response' in locals() and hasattr(response, 'text'):
-                print(f"Response content: {response.text[:500]}")
-            self._call_callback(self.error_callback, error_msg)
-            
-        except Exception as e:
-            error_msg = f"Unexpected error fetching macros: {str(e)}"
-            print(f"ERROR: {error_msg}")
-            import traceback
-            traceback.print_exc()
-            self._call_callback(self.error_callback, error_msg)
-            
-        return None
     
     def close(self):
         """Close WebSocket connection and clean up resources."""
         with self._connection_lock:
             print("[DEBUG] Closing WebSocket connection...")
-            
             # Stop any pending reconnection attempts
             if hasattr(self, '_reconnect_timer') and self._reconnect_timer:
                 try:
@@ -1312,8 +1266,7 @@ class BBCtrlCommunicator:
                     
                     closer = threading.Thread(target=safe_close, daemon=True)
                     closer.start()
-                    closer.join(timeout=1.0)  # Wait up to 1 second
-                    
+                    closer.join(timeout=1.0)  # Wait up to 1 second            
                 except Exception as e:
                     print(f"[WARNING] Error closing WebSocket: {e}")
             
@@ -1325,8 +1278,6 @@ class BBCtrlCommunicator:
                     pass
             
             print("[INFO] WebSocket connection closed")
-
-
 class CommunicationError(Exception):
     """Custom exception for communication errors."""
     pass

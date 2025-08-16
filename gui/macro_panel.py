@@ -799,33 +799,55 @@ class MacroPanel(ttk.LabelFrame):
             print(f"DEBUG: Unknown item type: {item_type}")
     
     def _on_tree_item_select(self, event):
-        """Handle selection of a tree item."""
+        """Handle selection of a tree item.
+
+        When a controller *file* is selected, behave like local macros: if the
+        editor has unsaved changes, prompt to save/discard/cancel. If the user
+        proceeds (Yes/No), load the selected file into the editor. If Cancel,
+        do nothing. For directories, only update selection state.
+        """
         selection = self.tree.selection()
         if not selection:
             self.selected_macro = None
             self._update_external_button_states()
             return
-            
+
         item = selection[0]
         tags = self.tree.item(item, 'tags')
-        
-        # Update selected macro
+
+        # Default: no selected macro
+        self.selected_macro = None
+
         if tags and len(tags) > 1:
             item_type = tags[0]
             full_path = tags[1]
+
             if item_type == 'file':
-                # Create a macro object for the selected file
+                # Update selected macro reference used by buttons
                 self.selected_macro = type('Macro', (), {
                     'name': full_path.split('/')[-1] if '/' in full_path else full_path,
                     'path': full_path,
                     'is_file': True
                 })
+
+                # Mirror local-macro behavior: prompt to save if editor is dirty,
+                # then load the selected controller file into the editor.
+                main_window = self._get_main_window()
+                if main_window:
+                    # If user cancels at the prompt, keep selection but do not open
+                    if not self._prompt_save_changes(main_window):
+                        # Reset selection state so buttons match current editor state
+                        self._update_external_button_states()
+                        return
+
+                # Proceed to view the current selection
+                self._open_file(full_path)
+
             else:
+                # Directories: keep no selected macro and just update buttons
                 self.selected_macro = None
-        else:
-            self.selected_macro = None
-        
-        # Update button states based on selection
+
+        # Update button states based on (possibly new) selection
         self._update_external_button_states()
     
     def _on_tree_right_click(self, event):
@@ -1162,36 +1184,80 @@ class MacroPanel(ttk.LabelFrame):
             bool: True if the user wants to continue (saved or discarded changes),
                   False if the user cancelled the operation.
         """
+        # If we can't reach the editor, allow operation to continue
         if not hasattr(main_window, 'code_editor'):
             return True
-            
+
+        editor = main_window.code_editor
+
+        def _is_dirty():
+            """Detect whether the editor has unsaved changes using several fallbacks."""
+            try:
+                # Preferred explicit APIs
+                if hasattr(editor, 'has_unsaved_changes') and callable(editor.has_unsaved_changes):
+                    if editor.has_unsaved_changes():
+                        return True
+                if hasattr(editor, 'is_editor_dirty') and callable(editor.is_editor_dirty):
+                    if editor.is_editor_dirty():
+                        return True
+            except Exception:
+                pass
+
+            # Fallback: Tk Text widget modified flag
+            try:
+                if hasattr(editor, 'text_widget') and hasattr(editor.text_widget, 'edit_modified'):
+                    return bool(editor.text_widget.edit_modified())
+            except Exception:
+                pass
+
+            # Last resort: ask the main window, if it exposes a helper
+            try:
+                if hasattr(main_window, 'is_editor_dirty') and callable(main_window.is_editor_dirty):
+                    return bool(main_window.is_editor_dirty())
+            except Exception:
+                pass
+
+            return False
+
         try:
-            if hasattr(main_window.code_editor, 'has_unsaved_changes') and \
-               main_window.code_editor.has_unsaved_changes():
-                response = messagebox.askyesnocancel(
-                    "Unsaved Changes",
-                    "You have unsaved changes in the editor. Do you want to save them?\n"
-                    "Click 'Yes' to save, 'No' to discard changes, or 'Cancel' to stay.",
-                    icon='warning'
-                )
-                
-                if response is None:  # User clicked Cancel
+            if not _is_dirty():
+                return True
+
+            response = messagebox.askyesnocancel(
+                "Unsaved Changes",
+                "You have unsaved changes in the editor. Do you want to save them?\n"
+                "Click 'Yes' to save, 'No' to discard changes, or 'Cancel' to stay.",
+                icon='warning',
+                parent=self
+            )
+
+            if response is None:  # Cancel
+                return False
+
+            if response is True:  # Yes -> Save
+                if not self._save_current_macro(main_window):
+                    messagebox.showerror("Error", "Failed to save changes to macro.", parent=self)
                     return False
-                    
-                if response:  # User clicked Yes
-                    if not self._save_current_macro(main_window):
-                        messagebox.showerror("Error", "Failed to save changes to macro.")
-                        return False
-                
-                # Clear the modified flag in either case (save or discard)
-                if hasattr(main_window.code_editor, 'clear_modified_flag'):
-                    main_window.code_editor.clear_modified_flag()
-                    
+
+            # Either saved or discarded: clear modified flags everywhere we can
+            try:
+                if hasattr(editor, 'clear_modified_flag') and callable(editor.clear_modified_flag):
+                    editor.clear_modified_flag()
+                if hasattr(editor, 'mark_editor_clean') and callable(editor.mark_editor_clean):
+                    editor.mark_editor_clean()
+                if hasattr(editor, 'text_widget') and hasattr(editor.text_widget, 'edit_modified'):
+                    editor.text_widget.edit_modified(False)
+                if hasattr(main_window, 'mark_editor_clean') and callable(main_window.mark_editor_clean):
+                    main_window.mark_editor_clean()
+            except Exception:
+                pass
+
             return True
-            
+
         except Exception as e:
             print(f"Error checking for unsaved changes: {e}")
-            return True  # Continue on error to avoid blocking
+            # Don't block navigation on error
+            return True
     
     def _load_macro_into_editor(self, macro, is_local=True):
         """Load macro content into the debugger panel."""
