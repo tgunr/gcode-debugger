@@ -2,9 +2,10 @@
 """
 Macro Panel for G-code Debugger
 
-Provides macro management and execution interface for both local and external macros.
+Provides macro management and execution interface for both local and controller macros.
 """
 import os
+import sys
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
 from datetime import datetime
@@ -22,12 +23,12 @@ logging.basicConfig(level=logging.WARNING)  # Set to WARNING to reduce debug out
 logger = logging.getLogger(__name__)
 
 class MacroPanel(ttk.LabelFrame):
-    """Panel for both local and external macro management and execution."""
+    """Panel for both local and controller macro management and execution."""
     
     def __init__(self, parent, macro_manager, local_macro_manager, comm=None, main_window=None):
         super().__init__(parent, text="Macros")
         self.main_window = main_window
-        self.macro_manager = macro_manager  # External macros
+        self.macro_manager = macro_manager  # Controller macros
         self.local_macro_manager = local_macro_manager  # Local macros
         self.comm = comm  # Communication interface
         self.selected_macro = None
@@ -55,9 +56,9 @@ class MacroPanel(ttk.LabelFrame):
         self._setup_local_macro_tab()
         
         # Controller files tab
-        self.external_frame = ttk.Frame(self.notebook)
-        self.notebook.add(self.external_frame, text="📁 Controller Files")
-        self._setup_external_macro_tab()
+        self.controller_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.controller_frame, text="📁 Controller Files")
+        self._setup_controller_macro_tab()
         
         # Bind tab change event
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
@@ -160,20 +161,20 @@ class MacroPanel(ttk.LabelFrame):
         )
         self.local_refresh_btn.pack(side=tk.LEFT)
     
-    def _setup_external_macro_tab(self):
+    def _setup_controller_macro_tab(self):
         """Setup the controller files tab with a tree view of the file system."""
-        print("DEBUG: Setting up external macro tab...")
+        print("DEBUG: Setting up controller macro tab...")
         
         # Controller files frame
-        self.external_files_frame = ttk.LabelFrame(self.external_frame, text="Controller Files", padding=5)
-        self.external_files_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.controller_files_frame = ttk.LabelFrame(self.controller_frame, text="Controller Files", padding=5)
+        self.controller_files_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # Configure grid weights
-        self.external_files_frame.columnconfigure(0, weight=1)
-        self.external_files_frame.rowconfigure(0, weight=1)
+        self.controller_files_frame.columnconfigure(0, weight=1)
+        self.controller_files_frame.rowconfigure(0, weight=1)
         
         # Create a frame for the treeview and scrollbars
-        tree_frame = ttk.Frame(self.external_files_frame)
+        tree_frame = ttk.Frame(self.controller_files_frame)
         tree_frame.grid(row=0, column=0, sticky='nsew')
         
         # Configure grid weights for the container
@@ -235,14 +236,14 @@ class MacroPanel(ttk.LabelFrame):
         self.tree_menu.add_command(label="Delete", command=self._on_delete_item)
         self.tree_menu.add_command(label="Rename", command=self._on_rename_item)
         self.tree_menu.add_separator()
-        self.tree_menu.add_command(label="Refresh", command=self._refresh_external_macro_list)
+        self.tree_menu.add_command(label="Refresh", command=self._refresh_controller_macro_list)
         
         # Navigation history
         self.path_history = []
         self.current_path = 'Home'
         
         # Add a frame for navigation buttons
-        nav_frame = ttk.Frame(self.external_files_frame)
+        nav_frame = ttk.Frame(self.controller_files_frame)
         nav_frame.grid(row=1, column=0, sticky='ew', pady=(5, 0))
         
         # Navigation buttons
@@ -278,121 +279,121 @@ class MacroPanel(ttk.LabelFrame):
         path_label.pack(side=tk.LEFT, padx=10)
         
         # Controller files buttons frame
-        external_btn_frame = ttk.Frame(self.external_frame)
-        external_btn_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
+        controller_btn_frame = ttk.Frame(self.controller_frame)
+        controller_btn_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
         
         # Initialize all UI elements before loading directory
-        self._setup_external_buttons(external_btn_frame)
+        self._setup_controller_buttons(controller_btn_frame)
         
         # Load the root directory after UI is fully initialized
         self._load_directory(self.current_path)
         
-    def _setup_external_buttons(self, parent_frame):
-        """Initialize all external macro buttons in the specified parent frame."""
+    def _setup_controller_buttons(self, parent_frame):
+        """Initialize all controller macro buttons in the specified parent frame."""
         # Row 1: Main action buttons
-        external_main_frame = ttk.Frame(parent_frame)
-        external_main_frame.pack(fill=tk.X, pady=(0, 2))
+        controller_main_frame = ttk.Frame(parent_frame)
+        controller_main_frame.pack(fill=tk.X, pady=(0, 2))
         
         # Row 2: Secondary action buttons
-        external_secondary_frame = ttk.Frame(parent_frame)
-        external_secondary_frame.pack(fill=tk.X, pady=(2, 0))
+        controller_secondary_frame = ttk.Frame(parent_frame)
+        controller_secondary_frame.pack(fill=tk.X, pady=(2, 0))
         
         # Execute button
-        self.external_execute_btn = ttk.Button(
-            external_main_frame,
+        self.controller_execute_btn = ttk.Button(
+            controller_main_frame,
             text="▶️ Run",
-            command=self._on_execute_external_macro,
+            command=self._on_execute_controller_macro,
             width=8,
             state=tk.DISABLED  # Initially disabled until a macro is selected
         )
-        self.external_execute_btn.pack(side=tk.LEFT, padx=(0, 2))
+        self.controller_execute_btn.pack(side=tk.LEFT, padx=(0, 2))
         
         # Stop button
-        self.external_stop_btn = ttk.Button(
-            external_main_frame,
+        self.controller_stop_btn = ttk.Button(
+            controller_main_frame,
             text="⏹️ Stop",
-            command=self._on_stop_external_macro,
+            command=self._on_stop_controller_macro,
             width=8,
             state=tk.DISABLED  # Initially disabled until execution starts
         )
-        self.external_stop_btn.pack(side=tk.LEFT, padx=(0, 2))
+        self.controller_stop_btn.pack(side=tk.LEFT, padx=(0, 2))
         
         # New button
-        self.external_new_btn = ttk.Button(
-            external_main_frame,
+        self.controller_new_btn = ttk.Button(
+            controller_main_frame,
             text="➕ New",
-            command=self._on_new_external_macro,
+            command=self._on_new_controller_macro,
             width=8
         )
-        self.external_new_btn.pack(side=tk.LEFT, padx=(0, 2))
+        self.controller_new_btn.pack(side=tk.LEFT, padx=(0, 2))
         
         # Delete button
-        self.external_delete_btn = ttk.Button(
-            external_main_frame,
+        self.controller_delete_btn = ttk.Button(
+            controller_main_frame,
             text="🗑️ Del",
-            command=self._on_delete_external_macro,
+            command=self._on_delete_controller_macro,
             width=8,
             state=tk.DISABLED  # Initially disabled until a macro is selected
         )
-        self.external_delete_btn.pack(side=tk.LEFT, padx=(0, 2))
+        self.controller_delete_btn.pack(side=tk.LEFT, padx=(0, 2))
         
         # Import button
-        self.external_import_btn = ttk.Button(
-            external_secondary_frame,
+        self.controller_import_btn = ttk.Button(
+            controller_secondary_frame,
             text="📥 Import",
-            command=self._on_import_external_macro,
+            command=self._on_import_controller_macro,
             width=8
         )
-        self.external_import_btn.pack(side=tk.LEFT, padx=(0, 2))
+        self.controller_import_btn.pack(side=tk.LEFT, padx=(0, 2))
         
         # Export button
-        self.external_export_btn = ttk.Button(
-            external_secondary_frame,
+        self.controller_export_btn = ttk.Button(
+            controller_secondary_frame,
             text="📤 Export",
-            command=self._on_export_external_macro,
+            command=self._on_export_controller_macro,
             width=8,
             state=tk.DISABLED  # Initially disabled until a macro is selected
         )
-        self.external_export_btn.pack(side=tk.LEFT, padx=(0, 2))
+        self.controller_export_btn.pack(side=tk.LEFT, padx=(0, 2))
         
         # Refresh button
-        self.external_refresh_btn = ttk.Button(
-            external_secondary_frame,
+        self.controller_refresh_btn = ttk.Button(
+            controller_secondary_frame,
             text="🔄",
-            command=self._refresh_external_macro_list,
+            command=self._refresh_controller_macro_list,
             width=4
         )
-        self.external_refresh_btn.pack(side=tk.LEFT)
+        self.controller_refresh_btn.pack(side=tk.LEFT)
     
     def refresh_macro_lists(self):
-        """Refresh both local and external macro lists."""
+        """Refresh both local and controller macro lists."""
         self._refresh_local_macro_list()
-        self._refresh_external_macro_list()
+        self._refresh_controller_macro_list()
         
         # Update button states for the current tab
         if hasattr(self, 'current_tab'):
             if self.current_tab == "local":
                 self._update_local_button_states()
             else:
-                self._update_external_button_states()
+                self._update_controller_button_states()
     
     def _on_tab_changed(self, event):
-        """Handle tab change event between local and external macros."""
+        """Handle tab change event between local and controller macros."""
         try:
             selected_tab = self.notebook.index(self.notebook.select())
             
             if selected_tab == 0:  # Local macros tab
                 self.current_tab = "local"
                 self._refresh_local_macro_list()
-            else:  # External macros tab
-                self.current_tab = "external"
-                self._refresh_external_macro_list()
+            else:  # Controller macros tab
+                self.current_tab = "controller"
+                self._refresh_controller_macro_list()
             
             # Update button states for the active tab
             if self.current_tab == "local":
                 self._update_local_button_states()
             else:
-                self._update_external_button_states()
+                self._update_controller_button_states()
                 
         except Exception as e:
             print(f"Error handling tab change: {str(e)}")
@@ -400,7 +401,7 @@ class MacroPanel(ttk.LabelFrame):
     def _refresh_macro_lists(self):
         """Refresh both macro list displays."""
         self._refresh_local_macro_list()
-        self._refresh_external_macro_list()
+        self._refresh_controller_macro_list()
     
     def _refresh_local_macro_list(self):
         """Refresh the local macro list display."""
@@ -420,10 +421,10 @@ class MacroPanel(ttk.LabelFrame):
         
         self._update_local_button_states()
     
-    def _refresh_external_macro_list(self):
+    def _refresh_controller_macro_list(self):
         """Refresh the list of files and directories from the controller."""
         print(f"\n{'='*80}")
-        print("DEBUG: _refresh_external_macro_list()")
+        print("DEBUG: _refresh_controller_macro_list()")
         print(f"Current tab: {self.current_tab}")
         print(f"Current path: {self.current_path}")
         print(f"Has comm: {hasattr(self, 'comm')}")
@@ -622,7 +623,7 @@ class MacroPanel(ttk.LabelFrame):
     def _refresh_macro_lists(self):
         """Refresh both macro list displays."""
         self._refresh_local_macro_list()
-        self._refresh_external_macro_list()
+        self._refresh_controller_macro_list()
 
     def _refresh_local_macro_list(self):
         """Refresh the local macro list display."""
@@ -819,7 +820,7 @@ class MacroPanel(ttk.LabelFrame):
         selection = self.tree.selection()
         if not selection:
             self.selected_macro = None
-            self._update_external_button_states()
+            self._update_controller_button_states()
             return
 
         item = selection[0]
@@ -847,7 +848,7 @@ class MacroPanel(ttk.LabelFrame):
                     # If user cancels at the prompt, keep selection but do not open
                     if not self._prompt_save_changes(main_window):
                         # Reset selection state so buttons match current editor state
-                        self._update_external_button_states()
+                        self._update_controller_button_states()
                         return
 
                 # Proceed to view the current selection
@@ -858,7 +859,7 @@ class MacroPanel(ttk.LabelFrame):
                 self.selected_macro = None
 
         # Update button states based on (possibly new) selection
-        self._update_external_button_states()
+        self._update_controller_button_states()
     
     def _on_tree_right_click(self, event):
         """Handle right-click on a tree item to show context menu."""
@@ -870,7 +871,7 @@ class MacroPanel(ttk.LabelFrame):
         self.tree.selection_set(item)
         
         # Update button states
-        self._update_external_buttons()
+        self._update_controller_button_states()
         
         # Show the context menu
         try:
@@ -946,7 +947,7 @@ class MacroPanel(ttk.LabelFrame):
                 self.comm.delete_file(full_path)
                 
             # Refresh the view
-            self._refresh_external_macro_list()
+            self._refresh_controller_macro_list()
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to delete {item_type}: {str(e)}", parent=self)
@@ -987,7 +988,7 @@ class MacroPanel(ttk.LabelFrame):
                 self.comm.rename_file(full_path, new_full_path)
                 
             # Refresh the view
-            self._refresh_external_macro_list()
+            self._refresh_controller_macro_list()
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to rename {item_type}: {str(e)}", parent=self)
@@ -1090,39 +1091,80 @@ class MacroPanel(ttk.LabelFrame):
             content = main_window.code_editor.text_widget.get('1.0', tk.END).strip()
             print(f"DEBUG: Got editor content, length: {len(content)}")
             
-            # Parse the content to extract the macro name and commands
-            lines = [line.strip() for line in content.split('\n') if line.strip()]
-            print(f"DEBUG: Parsed {len(lines)} non-empty lines")
-            
-            if not lines:
-                print("DEBUG: No content to save")
-                return False
-                
-            # The first line should contain the macro name
-            first_line = lines[0]
-            print(f"DEBUG: First line: {first_line}")
-            
-            if not first_line.startswith('; '):
-                print("DEBUG: First line doesn't start with '; ' (semicolon space)")
-                return False
-                
-            # Extract macro name from the first line
-            macro_name = first_line[2:].split(':', 1)[1].strip() if ':' in first_line else first_line[2:].strip()
-            print(f"DEBUG: Extracted macro name: '{macro_name}'")
-            
-            # Skip header lines (starting with ';') to get the actual commands
-            commands = [line for line in lines if not line.startswith(';')]
-            print(f"DEBUG: Found {len(commands)} command lines")
-            
-            # Get the current tab (local or external macros)
+            # Get the current tab (local or controller macros)
             try:
                 current_tab = self.notebook.tab(self.notebook.select(), "text").lower()
                 print(f"DEBUG: Current tab text: '{current_tab}'")
                 
                 # Check if this is a local macro tab (handle emoji prefix)
                 is_local = 'local' in current_tab
-                print(f"DEBUG: Detected macro type: {'local' if is_local else 'external'}")
+                print(f"DEBUG: Detected macro type: {'local' if is_local else 'controller'}")
                 
+                # For controller files, handle them as raw files (not macros)
+                if not is_local:
+                    print("DEBUG: This is a controller file - saving as raw file")
+                    # Check if we have a selected controller file
+                    if not hasattr(self, 'selected_macro') or self.selected_macro is None:
+                        print("DEBUG: No controller file selected, cannot save")
+                        return False
+                    
+                    # For controller files, we need to save back to the controller
+                    print(f"DEBUG: Attempting to save controller file: {self.selected_macro.name}")
+                    
+                    # Get the file path from the selected macro
+                    if hasattr(self.selected_macro, 'path'):
+                        file_path = self.selected_macro.path
+                        print(f"DEBUG: Controller file path: {file_path}")
+                        
+                        # Save the content back to the controller
+                        try:
+                            if hasattr(main_window, 'comm') and main_window.comm:
+                                print("DEBUG: Saving content to controller via main_window.comm")
+                                success = main_window.comm.write_file(file_path, content)
+                                print(f"DEBUG: Controller file save result: {success}")
+                                return success
+                            elif hasattr(self, 'comm') and self.comm:
+                                print("DEBUG: Saving content to controller via self.comm")
+                                success = self.comm.write_file(file_path, content)
+                                print(f"DEBUG: Controller file save result: {success}")
+                                return success
+                            else:
+                                print("DEBUG: No comm object available")
+                                return False
+                        except Exception as e:
+                            print(f"DEBUG: Error saving to controller: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            return False
+                    else:
+                        print("DEBUG: Selected macro has no path attribute")
+                        return False
+                
+                # For local macros, parse the content to extract the macro name and commands
+                lines = [line.strip() for line in content.split('\n') if line.strip()]
+                print(f"DEBUG: Parsed {len(lines)} non-empty lines")
+                
+                if not lines:
+                    print("DEBUG: No content to save")
+                    return False
+                    
+                # The first line should contain the macro name
+                first_line = lines[0]
+                print(f"DEBUG: First line: {first_line}")
+                
+                if not first_line.startswith('; '):
+                    print("DEBUG: First line doesn't start with '; ' (semicolon space)")
+                    return False
+                    
+                # Extract macro name from the first line
+                macro_name = first_line[2:].split(':', 1)[1].strip() if ':' in first_line else first_line[2:].strip()
+                print(f"DEBUG: Extracted macro name: '{macro_name}'")
+                
+                # Skip header lines (starting with ';') to get the actual commands
+                commands = [line for line in lines if not line.startswith(';')]
+                print(f"DEBUG: Found {len(commands)} command lines")
+            
+                # Handle local macros
                 if is_local:
                     print("DEBUG: Processing local macro")
                     if hasattr(main_window, 'local_macro_manager'):
@@ -1147,27 +1189,27 @@ class MacroPanel(ttk.LabelFrame):
                         return result
                     else:
                         print("DEBUG: No local_macro_manager found in main_window")
-                else:  # External macros
-                    print("DEBUG: Processing external macro")
+                else:  # Controller macros
+                    print("DEBUG: Processing controller macro")
                     if hasattr(main_window, 'macro_manager'):
                         print("DEBUG: Found macro_manager, updating macro")
                         # Try to get the macro first to ensure it exists
                         existing_macro = main_window.macro_manager.get_macro(macro_name)
                         if existing_macro is None:
-                            print(f"DEBUG: External macro '{macro_name}' not found, creating new one")
+                            print(f"DEBUG: Controller macro '{macro_name}' not found, creating new one")
                             result = main_window.macro_manager.create_macro(
                                 name=macro_name,
                                 commands=commands,
                                 description=existing_macro.description if hasattr(existing_macro, 'description') else ""
                             )
                         else:
-                            print("DEBUG: Updating existing external macro")
+                            print("DEBUG: Updating existing controller macro")
                             result = main_window.macro_manager.update_macro(
                                 name=macro_name,
                                 commands=commands,
                                 description=existing_macro.description if hasattr(existing_macro, 'description') else ""
                             )
-                        print(f"DEBUG: External macro update result: {result}")
+                        print(f"DEBUG: Controller macro update result: {result}")
                         return result
                     else:
                         print("DEBUG: No macro_manager found in main_window")
@@ -1300,7 +1342,7 @@ class MacroPanel(ttk.LabelFrame):
             
         try:
             # Create a header for the macro
-            macro_type = "Local" if is_local else "External"
+            macro_type = "Local" if is_local else "Controller"
             macro_content = f"; {macro_type} Macro: {macro.name}\n"
             
             if hasattr(macro, 'description') and macro.description:
@@ -1356,34 +1398,34 @@ class MacroPanel(ttk.LabelFrame):
             if hasattr(main_window, '_log_message'):
                 main_window._log_message(f"Error loading macro: {str(e)}", color="red")
     
-    def _update_external_button_states(self):
-        """Update external macro button enabled/disabled states.
+    def _update_controller_button_states(self):
+        """Update controller macro button enabled/disabled states.
         
-        This method updates the state of all external macro buttons based on the current selection
+        This method updates the state of all controller macro buttons based on the current selection
         and execution state. It ensures that buttons are only enabled when their actions are valid.
         """
         # Get the main window to check execution state
         main_window = self._get_main_window()
-        is_executing = hasattr(main_window, 'is_external_macro_executing') and main_window.is_external_macro_executing()
+        is_executing = hasattr(main_window, 'is_controller_macro_executing') and main_window.is_controller_macro_executing()
         has_selection = self.selected_macro is not None
         
         # Update button states
-        self.external_execute_btn.config(
+        self.controller_execute_btn.config(
             state=tk.NORMAL if (has_selection and not is_executing) else tk.DISABLED
         )
-        self.external_stop_btn.config(
+        self.controller_stop_btn.config(
             state=tk.NORMAL if is_executing else tk.DISABLED
         )
-        self.external_delete_btn.config(
+        self.controller_delete_btn.config(
             state=tk.NORMAL if (has_selection and not is_executing) else tk.DISABLED
         )
-        self.external_export_btn.config(
+        self.controller_export_btn.config(
             state=tk.NORMAL if (has_selection and not is_executing) else tk.DISABLED
         )
-        self.external_import_btn.config(
+        self.controller_import_btn.config(
             state=tk.NORMAL if not is_executing else tk.DISABLED
         )
-        self.external_new_btn.config(
+        self.controller_new_btn.config(
             state=tk.NORMAL if not is_executing else tk.DISABLED
         )
     
@@ -1561,64 +1603,64 @@ class MacroPanel(ttk.LabelFrame):
             messagebox.showerror("Error", f"Failed to load macro into editor: {e}")
     
     # Controller file operations
-    def _on_execute_external_macro(self, event=None):
+    def _on_execute_controller_macro(self, event=None):
         """Execute the selected controller file as a macro."""
         if not self.selected_macro:
             return
             
         try:
-            # Get main window and execute external macro
+            # Get main window and execute controller macro
             main_window = self._get_main_window()
-            if main_window and hasattr(main_window, 'execute_external_macro'):
+            if main_window and hasattr(main_window, 'execute_controller_macro'):
                 # Update UI to reflect execution state
-                self.external_execute_btn.config(state=tk.DISABLED)
-                self.external_stop_btn.config(state=tk.NORMAL)
-                self.external_import_btn.config(state=tk.DISABLED)
-                self.external_new_btn.config(state=tk.DISABLED)
+                self.controller_execute_btn.config(state=tk.DISABLED)
+                self.controller_stop_btn.config(state=tk.NORMAL)
+                self.controller_import_btn.config(state=tk.DISABLED)
+                self.controller_new_btn.config(state=tk.DISABLED)
                 
                 # Execute the macro
-                main_window.execute_external_macro(self.selected_macro.name)
+                main_window.execute_controller_macro(self.selected_macro.name)
                 
                 # Update button states after execution starts
-                self._update_external_button_states()
+                self._update_controller_button_states()
                 
         except Exception as e:
-            error_msg = f"Failed to execute external macro: {e}"
+            error_msg = f"Failed to execute controller macro: {e}"
             messagebox.showerror("Error", error_msg)
             if hasattr(main_window, '_log_message'):
                 main_window._log_message(f"Error executing macro: {str(e)}", color="red")
             # Ensure button states are reset on error
-            self._update_external_button_states()
+            self._update_controller_button_states()
     
-    def _on_stop_external_macro(self):
+    def _on_stop_controller_macro(self):
         """Stop controller file execution."""
         try:
             main_window = self._get_main_window()
-            if main_window and hasattr(main_window, 'stop_external_macro'):
+            if main_window and hasattr(main_window, 'stop_controller_macro'):
                 # Stop the execution
-                main_window.stop_external_macro()
+                main_window.stop_controller_macro()
                 
                 # Update button states
-                self._update_external_button_states()
+                self._update_controller_button_states()
                 
         except Exception as e:
-            error_msg = f"Failed to stop external macro: {e}"
+            error_msg = f"Failed to stop controller macro: {e}"
             messagebox.showerror("Error", error_msg)
             if hasattr(main_window, '_log_message'):
                 main_window._log_message(f"Error stopping macro: {str(e)}", color="red")
     
-    def _on_new_external_macro(self):
+    def _on_new_controller_macro(self):
         """Create a new file on the controller."""
         dialog = MacroEditDialog(self, "Create New Controller File")
         if dialog.result:
             name, description, commands, category = dialog.result
             if self.macro_manager.create_macro(name, commands, description, category):
-                self._refresh_external_macro_list()
+                self._refresh_controller_macro_list()
                 messagebox.showinfo("Success", f"File '{name}' created successfully on controller!")
             else:
                 messagebox.showerror("Error", f"Failed to create file '{name}'. Name may already exist.")
     
-    def _on_edit_external_macro(self):
+    def _on_edit_controller_macro(self):
         """Edit the selected controller file."""
         if not self.selected_macro:
             return
@@ -1627,34 +1669,34 @@ class MacroPanel(ttk.LabelFrame):
         if dialog.result:
             name, description, commands, category = dialog.result
             if self.macro_manager.update_macro(
-                name, 
-                commands=commands, 
-                description=description, 
+                name,
+                commands=commands,
+                description=description,
                 category=category
             ):
-                self._refresh_external_macro_list()
+                self._refresh_controller_macro_list()
                 messagebox.showinfo("Success", f"File '{name}' updated successfully on controller!")
             else:
                 messagebox.showerror("Error", f"Failed to update file '{name}' on controller.")
     
-    def _on_delete_external_macro(self):
+    def _on_delete_controller_macro(self):
         """Delete the selected controller file."""
         if not self.selected_macro:
             return
         
         result = messagebox.askyesno(
-            "Confirm Delete", 
+            "Confirm Delete",
             f"Are you sure you want to delete file '{self.selected_macro.name}' from the controller?"
         )
         
         if result:
             if self.macro_manager.delete_macro(self.selected_macro.name):
-                self._refresh_external_macro_list()
+                self._refresh_controller_macro_list()
                 messagebox.showinfo("Success", f"File '{self.selected_macro.name}' deleted from controller.")
             else:
                 messagebox.showerror("Error", f"Failed to delete file from controller.")
     
-    def _on_import_external_macro(self):
+    def _on_import_controller_macro(self):
         """Import a G-code file to the controller."""
         from tkinter import filedialog
         
@@ -1672,12 +1714,12 @@ class MacroPanel(ttk.LabelFrame):
                 description = simpledialog.askstring("Import to Controller", "Enter description (optional):") or ""
                 
                 if self.macro_manager.import_macro_from_file(name, file_path, description):
-                    self._refresh_external_macro_list()
+                    self._refresh_controller_macro_list()
                     messagebox.showinfo("Success", f"File '{name}' imported to controller successfully!")
                 else:
                     messagebox.showerror("Error", f"Failed to import file to controller.")
     
-    def _on_export_external_macro(self):
+    def _on_export_controller_macro(self):
         """Export the selected controller file to local G-code file."""
         if not self.selected_macro:
             return

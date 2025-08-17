@@ -174,14 +174,37 @@ class CodeEditor(ttk.Frame):
     def has_unsaved_changes(self) -> bool:
         """Check if there are unsaved changes in the editor."""
         current_content = self.text_widget.get('1.0', 'end-1c')
-        return current_content != self._original_content
+        has_changes = current_content != self._original_content
+        print(f"DEBUG: has_unsaved_changes() - current len: {len(current_content)}, original len: {len(self._original_content)}, has_changes: {has_changes}")
+        if has_changes:
+            print(f"DEBUG: Current content last 50 chars: {repr(current_content[-50:])}")
+            print(f"DEBUG: Original content last 50 chars: {repr(self._original_content[-50:])}")
+        return has_changes
     
     def clear_modified_flag(self):
         """Clear the modified flag and update the original content."""
+        print("DEBUG: clear_modified_flag() called")
+        old_content = self._original_content
+        current_content = self.text_widget.get('1.0', 'end-1c')
+        
         self._is_modified = False
-        self._original_content = self.text_widget.get('1.0', 'end-1c')
-        print(f"DEBUG: clear_modified_flag set _original_content len: {len(self._original_content)}, last 10: {repr(self._original_content[-10:])}")
+        self._original_content = current_content
+        
+        print(f"DEBUG: clear_modified_flag - old content len: {len(old_content)}, new content len: {len(current_content)}")
+        print(f"DEBUG: clear_modified_flag - new _original_content last 50: {repr(self._original_content[-50:])}")
+        
+        # Also clear the Tkinter modified flag
+        try:
+            self.text_widget.edit_modified(False)
+            print("DEBUG: Cleared Tkinter edit_modified flag")
+        except Exception as e:
+            print(f"DEBUG: Failed to clear Tkinter edit_modified flag: {e}")
+        
         self._mark_modified_lines()
+        
+        # Verify the change took effect
+        verification = self.has_unsaved_changes()
+        print(f"DEBUG: clear_modified_flag verification - has_unsaved_changes: {verification}")
     
     def load_gcode(self, parser: GCodeParser):
         """Load G-code from parser into the editor."""

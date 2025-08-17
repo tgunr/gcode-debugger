@@ -44,7 +44,7 @@ class PreferencesDialog:
         
         # Store values from config
         self.values = {
-            'paths.external_macros': tk.StringVar(value=self.config.get('paths.external_macros', '')),
+            'paths.controller_macros': tk.StringVar(value=self.config.get('paths.controller_macros', '')),
             'editor.font_family': tk.StringVar(value=self.config.get('editor.font_family', 'Courier')),
             'editor.font_size': tk.IntVar(value=self.config.get('editor.font_size', 12)),
             'editor.tab_size': tk.IntVar(value=self.config.get('editor.tab_size', 4)),
@@ -212,8 +212,8 @@ class PreferencesDialog:
         
         row = 0
         
-        # External Macros Directory
-        ttk.Label(frame, text="External Macros:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        # Controller Macros Directory
+        ttk.Label(frame, text="Controller Macros:").grid(row=row, column=0, sticky=tk.W, pady=5)
         
         # Create a frame for the path entry and browse button
         path_frame = ttk.Frame(frame)
@@ -223,7 +223,7 @@ class PreferencesDialog:
         # Path entry
         entry = ttk.Entry(
             path_frame,
-            textvariable=self.values['paths.external_macros']
+            textvariable=self.values['paths.controller_macros']
         )
         entry.grid(row=0, column=0, sticky=tk.EW, padx=(0, 5))
         
@@ -231,14 +231,14 @@ class PreferencesDialog:
         ttk.Button(
             path_frame,
             text="Browse...",
-            command=self._browse_external_macros_dir,
+            command=self._browse_controller_macros_dir,
             width=10
         ).grid(row=0, column=1, sticky=tk.E)
         
         # Add help text
         ttk.Label(
-            frame, 
-            text="Location where external macros are stored",
+            frame,
+            text="Location where controller macros are stored",
             font=('TkDefaultFont', 9, 'italic'),
             foreground='gray50'
         ).grid(row=row+1, column=1, sticky=tk.W, pady=(0, 10))
@@ -247,10 +247,10 @@ class PreferencesDialog:
         for child in frame.winfo_children():
             child.grid_configure(padx=5, pady=2)
     
-    def _browse_external_macros_dir(self):
-        """Open a directory selection dialog for the external macros directory."""
+    def _browse_controller_macros_dir(self):
+        """Open a directory selection dialog for the controller macros directory."""
         try:
-            initial_dir = self.values['paths.external_macros'].get()
+            initial_dir = self.values['paths.controller_macros'].get()
             
             # If the current path doesn't exist, use the user's home directory
             if not initial_dir or not os.path.exists(initial_dir):
@@ -261,7 +261,7 @@ class PreferencesDialog:
                 initial_dir = os.path.dirname(initial_dir) or os.path.expanduser("~")
                 
             dir_path = filedialog.askdirectory(
-                title="Select External Macros Directory",
+                title="Select Controller Macros Directory",
                 mustexist=True,
                 initialdir=initial_dir
             )
@@ -270,7 +270,7 @@ class PreferencesDialog:
                 # Convert to absolute path and normalize
                 dir_path = os.path.abspath(dir_path)
                 print(f"DEBUG: Selected directory: {dir_path}")
-                self.values['paths.external_macros'].set(dir_path)
+                self.values['paths.controller_macros'].set(dir_path)
                 
         except Exception as e:
             print(f"ERROR: Failed to select directory: {str(e)}")

@@ -59,7 +59,7 @@ def load_preferences() -> dict:
     config = get_config()
     return {
         "controller_url": config.get("connection.host", "localhost"),
-        "macros_path": config.get("paths.external_macros", "macros")
+        "macros_path": config.get("paths.controller_macros", "macros")
     }
 
 def check_dependencies():

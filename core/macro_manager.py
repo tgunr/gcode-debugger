@@ -328,20 +328,20 @@ class MacroManager:
             traceback.print_exc()
             return False
     
-    def sync_bidirectional(self, communicator, external_dir: Optional[str] = None, epsilon: float = 1.0) -> bool:
-        """Synchronise macros between the controller and a user-defined external
+    def sync_bidirectional(self, communicator, controller_dir: Optional[str] = None, epsilon: float = 1.0) -> bool:
+        """Synchronise macros between the controller and a user-defined controller
         directory using a newest-wins strategy.
 
         Steps:
         1. Compute the clock offset between host and controller.
-        2. Build dictionaries of macros on controller and in ``external_dir``.
+        2. Build dictionaries of macros on controller and in ``controller_dir``.
         3. For each macro present in either location choose the newer copy
            (after adjusting controller timestamps by the computed offset).
         4. Upload newer local files or download newer remote macros.
 
         Args:
             communicator: BBCtrlCommunicator instance.
-            external_dir: Path to the external macros directory. If ``None`` the
+            controller_dir: Path to the controller macros directory. If ``None`` the
                           directory defined in the application configuration is
                           used.
             epsilon: Time difference (seconds) considered equal when comparing
@@ -352,11 +352,11 @@ class MacroManager:
         """
         try:
             # ------------------------------------------------------------------
-            # 1. Determine external directory
+            # 1. Determine controller directory
             # ------------------------------------------------------------------
-            if external_dir is None:
-                external_dir = get_config().get_external_macros_dir()
-            os.makedirs(external_dir, exist_ok=True)
+            if controller_dir is None:
+                controller_dir = get_config().get_controller_macros_dir()
+            os.makedirs(controller_dir, exist_ok=True)
 
             # ------------------------------------------------------------------
             # 1.1. Calculate controller-host clock offset
@@ -370,7 +370,7 @@ class MacroManager:
                     print(f"WARNING: Controller clock differs by {offset_sec:+.2f}s – compensating during sync")
 
             # ------------------------------------------------------------------
-            # 2. Gather macro metadata from controller and external directory
+            # 2. Gather macro metadata from controller and controller directory
             # ------------------------------------------------------------------
             controller_macros_list = self._discover_controller_macros(communicator) if communicator else []
 
@@ -399,13 +399,13 @@ class MacroManager:
                 mod_dt += timedelta(seconds=offset_sec)
                 ctrl_info[name] = (data, mod_dt)
 
-            # External directory macros
-            ext_info: Dict[str, Tuple[Dict[str, Any], datetime, str]] = {}
-            for fname in os.listdir(external_dir):
+            # Controller directory macros
+            ctrl_dir_info: Dict[str, Tuple[Dict[str, Any], datetime, str]] = {}
+            for fname in os.listdir(controller_dir):
                 if not fname.endswith(".json"):
                     continue
                 name = fname[:-5]
-                path = os.path.join(external_dir, fname)
+                path = os.path.join(controller_dir, fname)
                 try:
                     with open(path, "r") as f:
                         data = json.load(f)
@@ -414,45 +414,45 @@ class MacroManager:
                         mod_dt = datetime.fromisoformat(mod_str)
                     else:
                         mod_dt = datetime.fromtimestamp(os.path.getmtime(path))
-                    ext_info[name] = (data, mod_dt, path)
+                    ctrl_dir_info[name] = (data, mod_dt, path)
                 except Exception as e:
                     print(f"WARNING: Failed to read macro file {fname}: {e}")
 
             # ------------------------------------------------------------------
             # 3. Synchronise each macro based on timestamps
             # ------------------------------------------------------------------
-            all_names = set(ctrl_info.keys()) | set(ext_info.keys())
+            all_names = set(ctrl_info.keys()) | set(ctrl_dir_info.keys())
             for name in all_names:
                 ctrl_present = name in ctrl_info
-                ext_present = name in ext_info
+                ctrl_dir_present = name in ctrl_dir_info
 
                 if ctrl_present:
                     ctrl_data, ctrl_dt = ctrl_info[name]
-                if ext_present:
-                    ext_data, ext_dt, ext_path = ext_info[name]
+                if ctrl_dir_present:
+                    ctrl_dir_data, ctrl_dir_dt, ctrl_dir_path = ctrl_dir_info[name]
 
                 # Both present – compare timestamps
-                if ctrl_present and ext_present:
-                    diff = (ctrl_dt - ext_dt).total_seconds()
+                if ctrl_present and ctrl_dir_present:
+                    diff = (ctrl_dt - ctrl_dir_dt).total_seconds()
                     if abs(diff) <= epsilon:
                         # Same timestamp – nothing to do
                         continue
                     if diff > 0:
                         print(f"DEBUG: Controller copy of '{name}' is newer. Downloading.")
-                        self._write_external_macro(communicator, name, ctrl_data, external_dir)
+                        self._write_controller_macro(communicator, name, ctrl_data, controller_dir)
                         self._create_or_update_local(ctrl_data)
                     else:
                         print(f"DEBUG: Local copy of '{name}' is newer. Uploading.")
-                        communicator.upload_macro(name, ext_data)
-                        self._create_or_update_local(ext_data)
-                elif ctrl_present and not ext_present:
+                        communicator.upload_macro(name, ctrl_dir_data)
+                        self._create_or_update_local(ctrl_dir_data)
+                elif ctrl_present and not ctrl_dir_present:
                     print(f"DEBUG: Macro '{name}' found only on controller. Downloading.")
-                    self._write_external_macro(communicator, name, ctrl_data, external_dir)
+                    self._write_controller_macro(communicator, name, ctrl_data, controller_dir)
                     self._create_or_update_local(ctrl_data)
-                elif ext_present and not ctrl_present:
+                elif ctrl_dir_present and not ctrl_present:
                     print(f"DEBUG: Macro '{name}' found only locally. Uploading.")
-                    communicator.upload_macro(name, ext_data)
-                    self._create_or_update_local(ext_data)
+                    communicator.upload_macro(name, ctrl_dir_data)
+                    self._create_or_update_local(ctrl_dir_data)
 
             # Refresh in-memory macros from disk to ensure consistency
             self.load_macros()
@@ -463,17 +463,17 @@ class MacroManager:
             print(f"ERROR: sync_bidirectional failed: {e}\n{traceback.format_exc()}")
             return False
 
-    def _write_external_macro(self, communicator, name: str, data: Dict[str, Any], external_dir: str) -> None:
-        """Write a macro file content to the external directory, ensuring the path exists."""
+    def _write_controller_macro(self, communicator, name: str, data: Dict[str, Any], controller_dir: str) -> None:
+        """Write a macro file content to the controller directory, ensuring the path exists."""
         
         # Get the relative path of the file on the controller
         path_on_controller = data.get('path')
         if not path_on_controller:
-            print(f"ERROR: Cannot write external macro '{name}', path is missing in metadata.")
+            print(f"ERROR: Cannot write controller macro '{name}', path is missing in metadata.")
             return
 
         # Construct the full local path, mirroring the controller's structure
-        full_local_path = os.path.join(external_dir, path_on_controller)
+        full_local_path = os.path.join(controller_dir, path_on_controller)
         dir_path = os.path.dirname(full_local_path)
 
         try:

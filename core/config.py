@@ -35,7 +35,7 @@ class ConfigManager:
                 "timeout": 10,
             },
             "paths": {
-                "external_macros": os.path.join(os.path.expanduser("~"), "Documents", "BBCtrl", "Macros"),
+                "controller_macros": os.path.join(os.path.expanduser("~"), "Documents", "BBCtrl", "Macros"),
                 "local_macros": os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "local_macros"),
                 "last_file_dir": os.path.expanduser("~"),
                 "last_export_dir": os.path.expanduser("~"),
@@ -125,8 +125,8 @@ class ConfigManager:
     
     def _ensure_directories(self) -> None:
         """Ensure all configured directories exist."""
-        # Ensure external macros directory exists
-        macros_dir = self.get('paths/external_macros')
+        # Ensure controller macros directory exists
+        macros_dir = self.get('paths/controller_macros')
         if macros_dir and not os.path.exists(macros_dir):
             try:
                 os.makedirs(macros_dir, exist_ok=True)
@@ -209,14 +209,14 @@ class ConfigManager:
         # Save updated list
         self.set('general.recent_files', recent_files)
     
-    def get_external_macros_dir(self) -> str:
-        """Get the external macros directory, ensuring it exists."""
-        macros_dir = self.get('paths.external_macros')
+    def get_controller_macros_dir(self) -> str:
+        """Get the controller macros directory, ensuring it exists."""
+        macros_dir = self.get('paths.controller_macros')
         if not os.path.exists(macros_dir):
             try:
                 os.makedirs(macros_dir, exist_ok=True)
             except OSError as e:
-                print(f"Error creating external macros directory: {e}")
+                print(f"Error creating controller macros directory: {e}")
         return macros_dir
 
 

@@ -78,7 +78,7 @@ class MainWindow:
         self.debugger = GCodeDebugger(self.communicator)
         
         # Initialize macro managers with configured paths
-        macros_dir = self.config.get_external_macros_dir()
+        macros_dir = self.config.get_controller_macros_dir()
         local_macros_dir = self.config.get('paths.local_macros', 'local_macros')
         
         self.macro_manager = MacroManager(macros_dir)
@@ -187,12 +187,12 @@ class MainWindow:
             """Callback when preferences are saved."""
             try:
                 # Get new paths from config
-                new_macros_dir = self.config.get('paths.external_macros')
+                new_macros_dir = self.config.get('paths.controller_macros')
                 new_local_macros_dir = self.config.get('paths.local_macros', 'local_macros')
                 
                 print(f"DEBUG: Preferences saved, checking for directory changes...")
-                print(f"  Current external macros dir: {getattr(self.macro_manager, 'macros_directory', 'N/A')}")
-                print(f"  New external macros dir: {new_macros_dir}")
+                print(f"  Current controller macros dir: {getattr(self.macro_manager, 'macros_directory', 'N/A')}")
+                print(f"  New controller macros dir: {new_macros_dir}")
                 
                 # Ensure we're on the main thread for UI operations
                 if threading.get_ident() != self._main_thread:
@@ -205,7 +205,7 @@ class MainWindow:
                     current_dir = getattr(self.macro_manager, 'macros_directory', '')
                     
                     if new_macros_dir != current_dir:
-                        print(f"  External macros directory changed to: {new_macros_dir}")
+                        print(f"  Controller macros directory changed to: {new_macros_dir}")
                         try:
                             # Ensure the directory exists and is writable
                             os.makedirs(new_macros_dir, exist_ok=True)
@@ -227,7 +227,7 @@ class MainWindow:
                             print(f"ERROR: Failed to reinitialize macro manager: {str(e)}")
                             messagebox.showerror(
                                 "Error",
-                                f"Failed to set external macros directory to {new_macros_dir}:\n\n{str(e)}\n\n"
+                                f"Failed to set controller macros directory to {new_macros_dir}:\n\n{str(e)}\n\n"
                                 "Please check that the directory exists and is writable."
                             )
                             return  # Don't proceed with UI updates if there was an error
@@ -350,22 +350,49 @@ class MainWindow:
     
     def save_current_file(self):
         """Save the current file or macro."""
+        print("DEBUG: save_current_file() called")
+        
         if not hasattr(self, 'macro_panel') or not hasattr(self, 'code_editor'):
+            print("DEBUG: Missing macro_panel or code_editor")
             return
             
         # Check if we're currently viewing a macro or controller file
         current_tab = self.macro_panel.notebook.tab(self.macro_panel.notebook.select(), "text").lower()
+        print(f"DEBUG: Current tab: '{current_tab}'")
+        
         if 'local' in current_tab or 'controller' in current_tab:
+            print("DEBUG: Detected macro tab, attempting to save macro")
+            # Check if editor has unsaved changes before save
+            has_changes_before = self.code_editor.has_unsaved_changes() if hasattr(self.code_editor, 'has_unsaved_changes') else "unknown"
+            print(f"DEBUG: Has unsaved changes before save: {has_changes_before}")
+            
             # Save macro
             if hasattr(self.macro_panel, '_save_current_macro'):
-                if self.macro_panel._save_current_macro(self):
+                print("DEBUG: Calling _save_current_macro")
+                save_result = self.macro_panel._save_current_macro(self)
+                print(f"DEBUG: Save result: {save_result}")
+                
+                if save_result:
                     self._log_message("Macro saved successfully")
+                    print("DEBUG: Save successful, clearing modified flag")
+                    
                     # Clear the modified flag after successful save
                     if hasattr(self.code_editor, 'clear_modified_flag'):
+                        print("DEBUG: Calling clear_modified_flag")
                         self.code_editor.clear_modified_flag()
+                        
+                        # Verify the flag was cleared
+                        has_changes_after = self.code_editor.has_unsaved_changes() if hasattr(self.code_editor, 'has_unsaved_changes') else "unknown"
+                        print(f"DEBUG: Has unsaved changes after clear: {has_changes_after}")
+                    else:
+                        print("DEBUG: code_editor has no clear_modified_flag method")
                 else:
+                    print("DEBUG: Save failed")
                     self._log_message("Failed to save macro", color="red")
+            else:
+                print("DEBUG: macro_panel has no _save_current_macro method")
         else:
+            print(f"DEBUG: Non-macro tab detected: '{current_tab}'")
             # TODO: Implement file save for non-macro files
             self._log_message("Save not implemented for this file type", color="orange")
     
