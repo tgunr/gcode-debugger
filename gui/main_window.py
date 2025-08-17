@@ -353,9 +353,9 @@ class MainWindow:
         if not hasattr(self, 'macro_panel') or not hasattr(self, 'code_editor'):
             return
             
-        # Check if we're currently viewing a macro
+        # Check if we're currently viewing a macro or controller file
         current_tab = self.macro_panel.notebook.tab(self.macro_panel.notebook.select(), "text").lower()
-        if 'local' in current_tab or 'external' in current_tab:
+        if 'local' in current_tab or 'controller' in current_tab:
             # Save macro
             if hasattr(self.macro_panel, '_save_current_macro'):
                 if self.macro_panel._save_current_macro(self):
