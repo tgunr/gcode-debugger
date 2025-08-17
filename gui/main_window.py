@@ -362,35 +362,56 @@ class MainWindow:
         
         if 'local' in current_tab or 'controller' in current_tab:
             print("DEBUG: Detected macro tab, attempting to save macro")
-            # Check if editor has unsaved changes before save
-            has_changes_before = self.code_editor.has_unsaved_changes() if hasattr(self.code_editor, 'has_unsaved_changes') else "unknown"
-            print(f"DEBUG: Has unsaved changes before save: {has_changes_before}")
             
-            # Save macro
-            if hasattr(self.macro_panel, '_save_current_macro'):
-                print("DEBUG: Calling _save_current_macro")
-                save_result = self.macro_panel._save_current_macro(self)
-                print(f"DEBUG: Save result: {save_result}")
+            # Detailed logging of current state
+            try:
+                # Capture current content and modified state
+                current_content = self.code_editor.text_widget.get('1.0', 'end-1c')
+                original_content = self.code_editor._original_content
                 
-                if save_result:
-                    self._log_message("Macro saved successfully")
-                    print("DEBUG: Save successful, clearing modified flag")
+                print(f"DEBUG: Current content length: {len(current_content)}")
+                print(f"DEBUG: Original content length: {len(original_content)}")
+                print(f"DEBUG: Content differs: {current_content != original_content}")
+                
+                # Check if editor has unsaved changes before save
+                has_changes_before = self.code_editor.has_unsaved_changes() if hasattr(self.code_editor, 'has_unsaved_changes') else "unknown"
+                print(f"DEBUG: Has unsaved changes before save: {has_changes_before}")
+                
+                # Save macro
+                if hasattr(self.macro_panel, '_save_current_macro'):
+                    print("DEBUG: Calling _save_current_macro")
+                    save_result = self.macro_panel._save_current_macro(self)
+                    print(f"DEBUG: Save result: {save_result}")
                     
-                    # Clear the modified flag after successful save
-                    if hasattr(self.code_editor, 'clear_modified_flag'):
-                        print("DEBUG: Calling clear_modified_flag")
-                        self.code_editor.clear_modified_flag()
+                    if save_result:
+                        self._log_message("Macro saved successfully")
+                        print("DEBUG: Save successful, clearing modified flag")
                         
-                        # Verify the flag was cleared
-                        has_changes_after = self.code_editor.has_unsaved_changes() if hasattr(self.code_editor, 'has_unsaved_changes') else "unknown"
-                        print(f"DEBUG: Has unsaved changes after clear: {has_changes_after}")
+                        # Clear the modified flag after successful save
+                        if hasattr(self.code_editor, 'clear_modified_flag'):
+                            print("DEBUG: Calling clear_modified_flag")
+                            self.code_editor.clear_modified_flag()
+                            
+                            # Verify the flag was cleared
+                            has_changes_after = self.code_editor.has_unsaved_changes() if hasattr(self.code_editor, 'has_unsaved_changes') else "unknown"
+                            print(f"DEBUG: Has unsaved changes after clear: {has_changes_after}")
+                            
+                            # Additional verification
+                            if has_changes_after and has_changes_after != "unknown":
+                                print("WARNING: Modified flag not cleared correctly!")
+                                print(f"DEBUG: Remaining changes: {self.code_editor.text_widget.get('1.0', 'end-1c')}")
+                        else:
+                            print("DEBUG: code_editor has no clear_modified_flag method")
                     else:
-                        print("DEBUG: code_editor has no clear_modified_flag method")
+                        print("DEBUG: Save failed")
+                        self._log_message("Failed to save macro", color="red")
                 else:
-                    print("DEBUG: Save failed")
-                    self._log_message("Failed to save macro", color="red")
-            else:
-                print("DEBUG: macro_panel has no _save_current_macro method")
+                    print("DEBUG: macro_panel has no _save_current_macro method")
+            except Exception as e:
+                print(f"CRITICAL ERROR in save_current_file: {e}")
+                import traceback
+                traceback.print_exc()
+                self._log_message(f"Save error: {e}", color="red")
         else:
             print(f"DEBUG: Non-macro tab detected: '{current_tab}'")
             # TODO: Implement file save for non-macro files

@@ -174,37 +174,132 @@ class CodeEditor(ttk.Frame):
     def has_unsaved_changes(self) -> bool:
         """Check if there are unsaved changes in the editor."""
         current_content = self.text_widget.get('1.0', 'end-1c')
-        has_changes = current_content != self._original_content
-        print(f"DEBUG: has_unsaved_changes() - current len: {len(current_content)}, original len: {len(self._original_content)}, has_changes: {has_changes}")
+        
+        # Normalize content by stripping trailing whitespace and normalizing line endings
+        normalized_current = '\n'.join(line.rstrip() for line in current_content.splitlines())
+        normalized_original = '\n'.join(line.rstrip() for line in self._original_content.splitlines())
+        
+        has_changes = normalized_current != normalized_original
+        
+        # Enhanced logging with stack trace to identify caller
+        import traceback
+        caller_info = traceback.extract_stack()[-2]
+        caller_filename = caller_info.filename.split('/')[-1]
+        caller_lineno = caller_info.lineno
+        caller_function = caller_info.name
+        
+        print(f"\n{'='*80}")
+        print(f"DEBUG: has_unsaved_changes() called from {caller_filename}:{caller_lineno} ({caller_function})")
+        print(f"DEBUG: Current content len: {len(current_content)}, Original content len: {len(self._original_content)}")
+        print(f"DEBUG: Normalized current content len: {len(normalized_current)}")
+        print(f"DEBUG: Normalized original content len: {len(normalized_original)}")
+        print(f"DEBUG: Tkinter edit_modified: {self.text_widget.edit_modified()}")
+        
         if has_changes:
-            print(f"DEBUG: Current content last 50 chars: {repr(current_content[-50:])}")
-            print(f"DEBUG: Original content last 50 chars: {repr(self._original_content[-50:])}")
+            print("DEBUG: Content differs:")
+            print("Current content (normalized, last 50 chars):", repr(normalized_current[-50:]))
+            print("Original content (normalized, last 50 chars):", repr(normalized_original[-50:]))
+            
+            # Detailed diff for debugging
+            from difflib import unified_diff
+            diff_lines = list(unified_diff(
+                normalized_original.splitlines(),
+                normalized_current.splitlines(),
+                fromfile='original',
+                tofile='current'
+            ))
+            print("\nDIFF:")
+            for line in diff_lines[:10]:  # Limit to first 10 diff lines
+                print(line)
+            if len(diff_lines) > 10:
+                print(f"... and {len(diff_lines) - 10} more lines")
+        
+        print(f"{'='*80}\n")
+        
         return has_changes
     
-    def clear_modified_flag(self):
-        """Clear the modified flag and update the original content."""
-        print("DEBUG: clear_modified_flag() called")
+    def clear_modified_flag(self, log_caller=True, force_reset=False):
+        """Comprehensive method to clear modified flags with enhanced logging and error handling.
+        
+        Args:
+            log_caller (bool): Whether to log the caller's information. Defaults to True.
+            force_reset (bool): Force reset even if content appears unchanged. Defaults to False.
+        
+        Returns:
+            bool: True if the modified flag was successfully cleared, False otherwise.
+        """
+        import traceback
+        
+        # Log caller information for debugging
+        if log_caller:
+            caller_info = traceback.extract_stack()[-2]
+            caller_filename = caller_info.filename.split('/')[-1]
+            caller_lineno = caller_info.lineno
+            caller_function = caller_info.name
+            
+            print(f"\n{'='*80}")
+            print(f"DEBUG: clear_modified_flag() called from {caller_filename}:{caller_lineno} ({caller_function})")
+            print(f"  Force reset: {force_reset}")
+        
+        # Capture current state before modification
         old_content = self._original_content
         current_content = self.text_widget.get('1.0', 'end-1c')
         
-        self._is_modified = False
-        self._original_content = current_content
+        # Normalize content to handle whitespace differences
+        def normalize_content(content):
+            return '\n'.join(line.rstrip() for line in content.splitlines())
         
-        print(f"DEBUG: clear_modified_flag - old content len: {len(old_content)}, new content len: {len(current_content)}")
-        print(f"DEBUG: clear_modified_flag - new _original_content last 50: {repr(self._original_content[-50:])}")
+        normalized_old = normalize_content(old_content)
+        normalized_current = normalize_content(current_content)
         
-        # Also clear the Tkinter modified flag
-        try:
-            self.text_widget.edit_modified(False)
-            print("DEBUG: Cleared Tkinter edit_modified flag")
-        except Exception as e:
-            print(f"DEBUG: Failed to clear Tkinter edit_modified flag: {e}")
+        # Determine if reset is needed
+        needs_reset = force_reset or normalized_old != normalized_current
         
-        self._mark_modified_lines()
+        # Detailed logging of current state
+        print(f"DEBUG: Before clearing:")
+        print(f"  _is_modified: {self._is_modified}")
+        print(f"  Tkinter edit_modified: {self.text_widget.edit_modified()}")
+        print(f"  Old content len: {len(old_content)}")
+        print(f"  Current content len: {len(current_content)}")
+        print(f"  Needs reset: {needs_reset}")
+        
+        # Reset modified state
+        if needs_reset:
+            self._is_modified = False
+            self._original_content = current_content
+            
+            # Clear Tkinter's modified flag
+            try:
+                self.text_widget.edit_modified(False)
+                print("DEBUG: Successfully cleared Tkinter edit_modified flag")
+            except Exception as e:
+                print(f"ERROR: Failed to clear Tkinter edit_modified flag: {e}")
+                import traceback
+                traceback.print_exc()
+            
+            # Mark modified lines (this might reset some state)
+            self._mark_modified_lines()
         
         # Verify the change took effect
         verification = self.has_unsaved_changes()
-        print(f"DEBUG: clear_modified_flag verification - has_unsaved_changes: {verification}")
+        
+        # Final state logging
+        print(f"DEBUG: After clearing:")
+        print(f"  _is_modified: {self._is_modified}")
+        print(f"  Tkinter edit_modified: {self.text_widget.edit_modified()}")
+        print(f"  Verification - has_unsaved_changes: {verification}")
+        print(f"{'='*80}\n")
+        
+        # Raise a warning if changes are still detected
+        if verification and needs_reset:
+            print("WARNING: Modified flag not fully cleared!")
+            print(f"Remaining changes: {repr(self.text_widget.get('1.0', 'end-1c'))}")
+        
+        return not verification  # Return True if successfully cleared
+    
+    def mark_editor_clean(self):
+        """Alias for clear_modified_flag to support multiple naming conventions."""
+        return self.clear_modified_flag(log_caller=False)
     
     def load_gcode(self, parser: GCodeParser):
         """Load G-code from parser into the editor."""
@@ -475,9 +570,50 @@ class CodeEditor(ttk.Frame):
         self.line_numbers.yview_scroll(int(-1 * (event.delta / 120)), "units")
     
     def _on_text_changed(self, event):
-        """Handle text changes."""
-        # Mark as modified
-        self._is_modified = True
+        """Handle text changes with comprehensive modification tracking."""
+        # Capture current content
+        current_content = self.text_widget.get('1.0', 'end-1c')
+        
+        # Normalize content to handle whitespace differences
+        def normalize_content(content):
+            return '\n'.join(line.rstrip() for line in content.splitlines())
+        
+        normalized_current = normalize_content(current_content)
+        normalized_original = normalize_content(self._original_content)
+        
+        # Detailed logging of text change
+        print(f"\n{'='*80}")
+        print(f"DEBUG: Text changed event triggered")
+        print(f"  Current content length: {len(current_content)}")
+        print(f"  Original content length: {len(self._original_content)}")
+        print(f"  Normalized current content length: {len(normalized_current)}")
+        print(f"  Normalized original content length: {len(normalized_original)}")
+        
+        # Mark as modified if normalized content differs
+        was_modified = self._is_modified
+        self._is_modified = normalized_current != normalized_original
+        
+        # Log modification state changes
+        print(f"  Previous modified state: {was_modified}")
+        print(f"  Current modified state: {self._is_modified}")
+        
+        # If modification state changed, log details
+        if was_modified != self._is_modified:
+            print("DEBUG: Modification state changed!")
+            if self._is_modified:
+                # Detailed diff for debugging
+                from difflib import unified_diff
+                diff_lines = list(unified_diff(
+                    normalized_original.splitlines(),
+                    normalized_current.splitlines(),
+                    fromfile='original',
+                    tofile='current'
+                ))
+                print("\nDIFF:")
+                for line in diff_lines[:10]:  # Limit to first 10 diff lines
+                    print(line)
+                if len(diff_lines) > 10:
+                    print(f"... and {len(diff_lines) - 10} more lines")
         
         # Reapply syntax highlighting after a short delay
         self.after_idle(self._apply_syntax_highlighting)
@@ -485,7 +621,13 @@ class CodeEditor(ttk.Frame):
         # Update modified lines highlighting
         self.after_idle(self._mark_modified_lines)
         
-        # Update original content for comparison (optional, if needed)
+        # Optional: Log first few characters of changes
+        if self._is_modified:
+            print("DEBUG: Content changes:")
+            print(f"  First 50 chars of current content: {repr(current_content[:50])}")
+            print(f"  First 50 chars of original content: {repr(self._original_content[:50])}")
+        
+        print(f"{'='*80}\n")
     
     def _on_click(self, event):
         """Handle mouse clicks."""

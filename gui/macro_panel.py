@@ -1076,7 +1076,7 @@ class MacroPanel(ttk.LabelFrame):
         Returns:
             bool: True if save was successful, False otherwise.
         """
-        print("DEBUG: Starting _save_current_macro")
+        print("DEBUG: _save_current_macro called")
         
         if not hasattr(main_window, 'code_editor'):
             print("DEBUG: No code_editor in main_window")
@@ -1102,7 +1102,7 @@ class MacroPanel(ttk.LabelFrame):
                 
                 # For controller files, handle them as raw files (not macros)
                 if not is_local:
-                    print("DEBUG: This is a controller file - saving as raw file")
+                    print("DEBUG: In controller save branch")
                     # Check if we have a selected controller file
                     if not hasattr(self, 'selected_macro') or self.selected_macro is None:
                         print("DEBUG: No controller file selected, cannot save")
@@ -1118,115 +1118,83 @@ class MacroPanel(ttk.LabelFrame):
                         
                         # Save the content back to the controller
                         try:
-                            if hasattr(main_window, 'comm') and main_window.comm:
-                                print("DEBUG: Saving content to controller via main_window.comm")
-                                success = main_window.comm.write_file(file_path, content)
-                                print(f"DEBUG: Controller file save result: {success}")
-                                return success
-                            elif hasattr(self, 'comm') and self.comm:
-                                print("DEBUG: Saving content to controller via self.comm")
-                                success = self.comm.write_file(file_path, content)
-                                print(f"DEBUG: Controller file save result: {success}")
-                                return success
-                            else:
-                                print("DEBUG: No comm object available")
+                            # Prioritize main_window.comm, then self.comm
+                            comm_obj = getattr(main_window, 'comm', None) or getattr(self, 'comm', None)
+                            
+                            if comm_obj is None:
+                                print("DEBUG: No communication object available")
+                                messagebox.showerror("Save Error", "No communication object available to save file.")
                                 return False
+                            
+                            # Verify communication object has write_file method
+                            if not hasattr(comm_obj, 'write_file'):
+                                print("DEBUG: Communication object lacks write_file method")
+                                messagebox.showerror("Save Error", "Communication method not supported.")
+                                return False
+                            
+                            # Attempt to save
+                            print("DEBUG: Attempting to save via communication object")
+                            success = comm_obj.write_file(file_path, content)
+                            
+                            if success:
+                                print(f"DEBUG: Successfully saved file to {file_path}")
+                                # Optionally, show a success message
+                                messagebox.showinfo("Save Successful", f"File '{self.selected_macro.name}' saved.")
+                                return True
+                            else:
+                                print(f"DEBUG: Failed to save file to {file_path}")
+                                messagebox.showerror("Save Error", f"Failed to save file '{self.selected_macro.name}'.")
+                                return False
+                            
                         except Exception as e:
-                            print(f"DEBUG: Error saving to controller: {e}")
+                            print(f"DEBUG: Comprehensive save error: {e}")
                             import traceback
                             traceback.print_exc()
+                            messagebox.showerror("Save Error", f"An error occurred while saving: {e}")
                             return False
                     else:
                         print("DEBUG: Selected macro has no path attribute")
+                        messagebox.showerror("Save Error", "Cannot determine file path for saving.")
                         return False
                 
-                # For local macros, parse the content to extract the macro name and commands
-                lines = [line.strip() for line in content.split('\n') if line.strip()]
-                print(f"DEBUG: Parsed {len(lines)} non-empty lines")
-                
-                if not lines:
-                    print("DEBUG: No content to save")
-                    return False
-                    
-                # The first line should contain the macro name
-                first_line = lines[0]
-                print(f"DEBUG: First line: {first_line}")
-                
-                if not first_line.startswith('; '):
-                    print("DEBUG: First line doesn't start with '; ' (semicolon space)")
-                    return False
-                    
-                # Extract macro name from the first line
-                macro_name = first_line[2:].split(':', 1)[1].strip() if ':' in first_line else first_line[2:].strip()
-                print(f"DEBUG: Extracted macro name: '{macro_name}'")
-                
-                # Skip header lines (starting with ';') to get the actual commands
-                commands = [line for line in lines if not line.startswith(';')]
-                print(f"DEBUG: Found {len(commands)} command lines")
-            
-                # Handle local macros
-                if is_local:
-                    print("DEBUG: Processing local macro")
-                    if hasattr(main_window, 'local_macro_manager'):
-                        print("DEBUG: Found local_macro_manager, updating macro")
-                        # Try to get the macro first to ensure it exists
-                        existing_macro = main_window.local_macro_manager.get_local_macro(macro_name)
-                        if existing_macro is None:
-                            print(f"DEBUG: Local macro '{macro_name}' not found, creating new one")
-                            result = main_window.local_macro_manager.create_local_macro(
-                                name=macro_name,
-                                commands=commands,
-                                description=existing_macro.description if hasattr(existing_macro, 'description') else ""
-                            )
-                        else:
-                            print("DEBUG: Updating existing local macro")
-                            result = main_window.local_macro_manager.update_local_macro(
-                                name=macro_name,
-                                commands=commands,
-                                description=existing_macro.description if hasattr(existing_macro, 'description') else ""
-                            )
-                        print(f"DEBUG: Local macro update result: {result}")
-                        return result
+                print("DEBUG: In local macro save branch")
+                if self.selected_local_macro:
+                    print(f"DEBUG: Selected local macro: {self.selected_local_macro.name}")
+                    # Update the macro in the manager
+                    success = self.local_macro_manager.update_local_macro(
+                        self.selected_local_macro.name,
+                        commands=content.splitlines(),
+                        description=self.selected_local_macro.description,
+                        category=self.selected_local_macro.category
+                    )
+                    print(f"DEBUG: update_local_macro result: {success}")
+                    if success:
+                        print("DEBUG: Local macro updated successfully")
+                        # Clear modified flag in editor
+                        if hasattr(main_window.code_editor, 'clear_modified_flag'):
+                            main_window.code_editor.clear_modified_flag()
+                        return True
                     else:
-                        print("DEBUG: No local_macro_manager found in main_window")
-                else:  # Controller macros
-                    print("DEBUG: Processing controller macro")
-                    if hasattr(main_window, 'macro_manager'):
-                        print("DEBUG: Found macro_manager, updating macro")
-                        # Try to get the macro first to ensure it exists
-                        existing_macro = main_window.macro_manager.get_macro(macro_name)
-                        if existing_macro is None:
-                            print(f"DEBUG: Controller macro '{macro_name}' not found, creating new one")
-                            result = main_window.macro_manager.create_macro(
-                                name=macro_name,
-                                commands=commands,
-                                description=existing_macro.description if hasattr(existing_macro, 'description') else ""
-                            )
-                        else:
-                            print("DEBUG: Updating existing controller macro")
-                            result = main_window.macro_manager.update_macro(
-                                name=macro_name,
-                                commands=commands,
-                                description=existing_macro.description if hasattr(existing_macro, 'description') else ""
-                            )
-                        print(f"DEBUG: Controller macro update result: {result}")
-                        return result
-                    else:
-                        print("DEBUG: No macro_manager found in main_window")
-                        
+                        print("DEBUG: Failed to update local macro")
+                        messagebox.showerror("Save Error", f"Failed to update local macro '{self.selected_local_macro.name}'.")
+                        return False
+                else:
+                    print("DEBUG: No selected local macro")
+                    messagebox.showerror("Save Error", "No local macro selected for saving.")
+                    return False
+                
             except Exception as e:
                 print(f"DEBUG: Error in tab detection or macro update: {e}")
                 import traceback
                 traceback.print_exc()
+                messagebox.showerror("Save Error", f"An unexpected error occurred: {e}")
                 return False
                     
-            print("DEBUG: No appropriate macro manager found")
-            return False
-            
         except Exception as e:
             print(f"ERROR in _save_current_macro: {e}", file=sys.stderr)
             import traceback
             traceback.print_exc()
+            messagebox.showerror("Save Error", f"An unexpected error occurred: {e}")
             return False
     
     def _prompt_save_changes(self, main_window) -> bool:
@@ -1244,45 +1212,73 @@ class MacroPanel(ttk.LabelFrame):
 
         def _is_dirty():
             """Detect whether the editor has unsaved changes using several fallbacks."""
-            print("DEBUG: Checking if editor is dirty")
+            print("\n" + "="*80)
+            print("DEBUG: Comprehensive Dirty State Check")
+            print(f"DEBUG: Editor object: {editor}")
+            print(f"DEBUG: Main Window object: {main_window}")
+            
+            # Detailed attribute and method inspection
+            print("\nDEBUG: Inspecting editor attributes and methods:")
+            for attr in ['has_unsaved_changes', 'is_editor_dirty', 'text_widget', '_original_content']:
+                print(f"  - hasattr(editor, '{attr}'): {hasattr(editor, attr)}")
+                if hasattr(editor, attr):
+                    try:
+                        value = getattr(editor, attr)
+                        print(f"    Value: {repr(value)}")
+                        if callable(value):
+                            print(f"    Callable: {value}")
+                    except Exception as e:
+                        print(f"    Error accessing {attr}: {e}")
+            
             try:
                 # Preferred explicit APIs
                 if hasattr(editor, 'has_unsaved_changes') and callable(editor.has_unsaved_changes):
-                    print("DEBUG: Using has_unsaved_changes")
-                    if editor.has_unsaved_changes():
-                        print("DEBUG: has_unsaved_changes returned True")
-                        return True
-                    else:
-                        print("DEBUG: has_unsaved_changes returned False")
+                    print("\nDEBUG: Using has_unsaved_changes")
+                    result = editor.has_unsaved_changes()
+                    print(f"DEBUG: has_unsaved_changes returned: {result}")
+                    if result:
+                        print("DEBUG: Current content:", repr(editor.text_widget.get('1.0', 'end-1c')))
+                        print("DEBUG: Original content:", repr(editor._original_content))
+                        return result
+
                 if hasattr(editor, 'is_editor_dirty') and callable(editor.is_editor_dirty):
-                    print("DEBUG: Using is_editor_dirty")
-                    if editor.is_editor_dirty():
-                        print("DEBUG: is_editor_dirty returned True")
-                        return True
-                    else:
-                        print("DEBUG: is_editor_dirty returned False")
+                    print("\nDEBUG: Using is_editor_dirty")
+                    result = editor.is_editor_dirty()
+                    print(f"DEBUG: is_editor_dirty returned: {result}")
+                    if result:
+                        return result
             except Exception as e:
                 print(f"DEBUG: Exception in explicit APIs: {e}")
+                import traceback
+                traceback.print_exc()
 
             # Fallback: Tk Text widget modified flag
             try:
                 if hasattr(editor, 'text_widget') and hasattr(editor.text_widget, 'edit_modified'):
                     modified = bool(editor.text_widget.edit_modified())
-                    print(f"DEBUG: Tk edit_modified: {modified}")
+                    print(f"\nDEBUG: Tk edit_modified: {modified}")
+                    if modified:
+                        print("DEBUG: Current content:", repr(editor.text_widget.get('1.0', 'end-1c')))
+                        print("DEBUG: Original content:", repr(editor._original_content))
                     return modified
             except Exception as e:
                 print(f"DEBUG: Exception in Tk fallback: {e}")
+                import traceback
+                traceback.print_exc()
 
             # Last resort: ask the main window, if it exposes a helper
             try:
                 if hasattr(main_window, 'is_editor_dirty') and callable(main_window.is_editor_dirty):
                     dirty = bool(main_window.is_editor_dirty())
-                    print(f"DEBUG: main_window is_editor_dirty: {dirty}")
+                    print(f"\nDEBUG: main_window is_editor_dirty: {dirty}")
                     return dirty
             except Exception as e:
                 print(f"DEBUG: Exception in main_window fallback: {e}")
+                import traceback
+                traceback.print_exc()
 
-            print("DEBUG: All checks passed, returning False")
+            print("\nDEBUG: All checks passed, returning False")
+            print("="*80 + "\n")
             return False
 
         try:

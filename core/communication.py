@@ -1270,7 +1270,7 @@ class BBCtrlCommunicator:
                     
                     closer = threading.Thread(target=safe_close, daemon=True)
                     closer.start()
-                    closer.join(timeout=1.0)  # Wait up to 1 second            
+                    closer.join(timeout=1.0)  # Wait up to 1 second
                 except Exception as e:
                     print(f"[WARNING] Error closing WebSocket: {e}")
             
@@ -1282,6 +1282,69 @@ class BBCtrlCommunicator:
                     pass
             
             print("[INFO] WebSocket connection closed")
+
+    def write_file(self, file_path: str, content: str) -> bool:
+        """Write content to a file on the controller.
+        
+        Args:
+            file_path: Destination path relative to controller root
+            content: File contents to write
+        
+        Returns:
+            True if file was successfully written, False otherwise
+        """
+        try:
+            from urllib.parse import quote
+            
+            # URL encode the file path
+            encoded_path = quote(file_path, safe='/')
+            url = f'{self.base_url}/api/fs/{encoded_path}'
+            
+            # Set appropriate headers
+            headers = {
+                'Content-Type': 'text/plain',
+            }
+            
+            # Send PUT request to write file
+            response = requests.put(url, data=content, headers=headers, timeout=10)
+            
+            if response.status_code in (200, 201, 204):
+                print(f"DEBUG: Successfully wrote file {file_path}")
+                return True
+            else:
+                error_msg = f"Failed to write file {file_path}: HTTP {response.status_code}"
+                print(f"ERROR: {error_msg}")
+                if response.text:
+                    print(f"Response body: {response.text[:500]}")
+                
+                # Call error callback if available
+                if hasattr(self, 'error_callback') and self.error_callback:
+                    self._call_callback(self.error_callback, error_msg)
+                
+                return False
+        
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Network error writing file {file_path}: {str(e)}"
+            print(f"ERROR: {error_msg}")
+            
+            # Call error callback if available
+            if hasattr(self, 'error_callback') and self.error_callback:
+                self._call_callback(self.error_callback, error_msg)
+            
+            return False
+        
+        except Exception as e:
+            error_msg = f"Unexpected error writing file {file_path}: {str(e)}"
+            print(f"ERROR: {error_msg}")
+            import traceback
+            traceback.print_exc()
+            
+            # Call error callback if available
+            if hasattr(self, 'error_callback') and self.error_callback:
+                self._call_callback(self.error_callback, error_msg)
+            
+            return False
+
 class CommunicationError(Exception):
     """Custom exception for communication errors."""
     pass
