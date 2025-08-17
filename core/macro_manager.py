@@ -237,9 +237,9 @@ class MacroManager:
                 print(error_msg)
                 return False
             
-            # Get macros from controller
+            # Get macros from controller using file system methods
             print("DEBUG: Fetching macros from controller...")
-            controller_macros = communicator.get_macros()
+            controller_macros = self._discover_controller_macros(communicator)
             
             if not controller_macros:
                 print("WARNING: No macros found on controller")
@@ -289,23 +289,26 @@ class MacroManager:
                     # Update in-memory macro
                     commands = [line.strip() for line in content.split('\n') if line.strip() and not line.strip().startswith(';')]
                     
-                    current_time = datetime.now().isoformat()
-                    macro_data = {
-                        'name': macro.name,
-                        'description': macro.description or f"Synced from controller: {macro.name}",
-                        'commands': commands,
-                        'created_date': current_time,
-                        'modified_date': current_time,
-                        'category': macro.category or 'system',
-                        'color': '#e6e6e6',
-                        'hotkey': '',
-                        'path': path_on_controller
-                    }
-                    
                     if macro.name in self.macros:
-                        self.update_macro(**macro_data)
+                        # update_macro only accepts specific parameters
+                        self.update_macro(
+                            name=macro.name,
+                            commands=commands,
+                            description=macro.description or f"Synced from controller: {macro.name}",
+                            category=macro.category or 'system',
+                            color='#e6e6e6',
+                            hotkey=''
+                        )
                     else:
-                        self.create_macro(**macro_data)
+                        # create_macro accepts all parameters
+                        self.create_macro(
+                            name=macro.name,
+                            commands=commands,
+                            description=macro.description or f"Synced from controller: {macro.name}",
+                            category=macro.category or 'system',
+                            color='#e6e6e6',
+                            hotkey=''
+                        )
                     
                     synced_count += 1
                     
@@ -369,26 +372,20 @@ class MacroManager:
             # ------------------------------------------------------------------
             # 2. Gather macro metadata from controller and external directory
             # ------------------------------------------------------------------
-            controller_macros = communicator.get_macros() if communicator else {}
+            controller_macros_list = self._discover_controller_macros(communicator) if communicator else []
 
-            # --- Compatibility adapter ---------------------------------------------------
-            # communicator.get_macros() may return a list (new API) or dict (legacy).
-            # Convert list payload into the dict format expected below.
-            if isinstance(controller_macros, list):
-                tmp = {}
-                for m in controller_macros:
-                    if isinstance(m, dict):
-                        name = m.get("name")
-                        data = m
-                    else:
-                        name = getattr(m, "name", None)
-                        data = m.__dict__ if hasattr(m, "__dict__") else {}
-                    if not name:
-                        continue
-                    tmp[name] = data
-                controller_macros = tmp
-
-            controller_macros = controller_macros or {}
+            # Convert list to dict format for compatibility with existing logic
+            controller_macros = {}
+            for macro in controller_macros_list:
+                controller_macros[macro.name] = {
+                    'name': macro.name,
+                    'path': macro.path,
+                    'description': macro.description,
+                    'category': macro.category,
+                    'modified_date': getattr(macro, 'modified_date', ''),
+                    'modifiedDate': getattr(macro, 'modified_date', ''),
+                    'modified': getattr(macro, 'modified', 0)
+                }
 
             # name -> (data, modified_dt)
             ctrl_info: Dict[str, Tuple[Dict[str, Any], datetime]] = {}
@@ -523,6 +520,50 @@ class MacroManager:
                 color=data.get("color", "#e6e6e6"),
                 hotkey=data.get("hotkey", "")
             )
+
+    def _discover_controller_macros(self, communicator):
+        """Discover macros on the controller using the communicator's file system methods.
+        
+        Args:
+            communicator: BBCtrlCommunicator instance
+            
+        Returns:
+            List of macro objects with name, path, description, category attributes
+        """
+        print("DEBUG: Discovering macros on controller using file system methods")
+        
+        try:
+            # Use the communicator's existing _find_macros_recursive method
+            # This method already exists and returns the macro data we need
+            macros_dict = communicator._find_macros_recursive("Home")
+            
+            # Convert the dictionary to a list of objects with the required attributes
+            macro_objects = []
+            for macro_name, macro_data in macros_dict.items():
+                # Create a simple object with the required attributes
+                class MacroInfo:
+                    def __init__(self, name, path, description="", category="user"):
+                        self.name = name
+                        self.path = path
+                        self.description = description
+                        self.category = category
+                
+                macro_obj = MacroInfo(
+                    name=macro_data.get('name', macro_name),
+                    path=macro_data.get('path', ''),
+                    description=macro_data.get('description', ''),
+                    category=macro_data.get('category', 'user')
+                )
+                macro_objects.append(macro_obj)
+            
+            print(f"DEBUG: _discover_controller_macros found {len(macro_objects)} macros")
+            return macro_objects
+            
+        except Exception as e:
+            print(f"ERROR: Failed to discover controller macros: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return []
 
     def export_macro(self, name: str, filepath: str) -> bool:
         """Export a macro to a G-code file."""
