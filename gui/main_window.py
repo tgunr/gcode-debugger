@@ -327,14 +327,14 @@ class MainWindow:
         self.status_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Status: ", menu=self.status_menu, state='disabled')
         
-        # Add a label to the menu bar for status display
-        self.status_label = tk.Label(
+        # Add a label to the menu bar for debug status display
+        self.debug_status_label = tk.Label(
             menubar,
             textvariable=self.status_var,
             font=("Arial", 10, "bold"),
             padx=10
         )
-        self.status_label.pack(side=tk.RIGHT)
+        self.debug_status_label.pack(side=tk.RIGHT)
         
         # E-Stop button (far right)
         menubar.add_command(
@@ -392,8 +392,8 @@ class MainWindow:
         
         # Connection status
         # For side=tk.RIGHT, pack dynamic label first, then static text so final order is "Status: Connected"
-        self.status_label = ttk.Label(toolbar, textvariable=self.connection_status)
-        self.status_label.pack(side=tk.RIGHT, padx=2)
+        self.connection_status_label = ttk.Label(toolbar, textvariable=self.connection_status)
+        self.connection_status_label.pack(side=tk.RIGHT, padx=2)
         ttk.Label(toolbar, text="Status:").pack(side=tk.RIGHT, padx=2)
 
         # Update label color whenever status changes
@@ -721,9 +721,9 @@ class MainWindow:
         """Update label color based on current connection status."""
         status = self.connection_status.get().lower()
         if status == "connected":
-            self.status_label.configure(foreground="#00cc00")  # bright green
+            self.connection_status_label.configure(foreground="#00cc00")  # bright green
         else:
-            self.status_label.configure(foreground="#ff0000")  # bright red
+            self.connection_status_label.configure(foreground="#ff0000")  # bright red
 
     def _start_position_updates(self):
         """Start periodic position updates."""
@@ -1005,9 +1005,9 @@ class MainWindow:
             }
             
             status_text, color = state_info.get(debug_state, ("UNKNOWN", "gray"))
-            if hasattr(self, 'status_var') and hasattr(self, 'status_label'):
+            if hasattr(self, 'status_var') and hasattr(self, 'debug_status_label'):
                 self.status_var.set(status_text)
-                self.status_label.config(foreground=color)
+                self.debug_status_label.config(foreground=color)
             
             self._log_message(f"Debug state: {debug_state.value}")
         
