@@ -27,40 +27,7 @@ except ImportError as e:
     print("Run: pip install -r requirements.txt")
     sys.exit(1)
 
-def sync_macros_on_startup(controller_url: str, macros_path: str) -> None:
-    """Sync macros on application startup."""
-    try:
-        # Create communicator instance
-        communicator = BBCtrlCommunicator(host=controller_url)
         
-        # Attempt to connect
-        if communicator.connect_websocket():
-            print("Successfully connected to controller for sync")
-            
-            # Create macro manager with specified path
-            macro_manager = MacroManager(macros_directory=macros_path)
-            
-            # Perform sync
-            if macro_manager.sync_from_controller(communicator):
-                print("Macro synchronization completed successfully")
-            else:
-                print("Macro synchronization failed")
-            
-            # Clean up
-            communicator.close()
-        else:
-            print("Failed to connect to controller for sync")
-            
-    except Exception as e:
-        print(f"Error during startup macro sync: {str(e)}")
-        
-def load_preferences() -> dict:
-    """Load application preferences from configuration."""
-    config = get_config()
-    return {
-        "controller_url": config.get("connection.host", "localhost"),
-        "macros_path": config.get("paths.controller_macros", "macros")
-    }
 
 def check_dependencies():
     """Check if required dependencies are available."""
@@ -101,53 +68,10 @@ def main():
     if not check_dependencies():
         sys.exit(1)
     
-    try:
-        print("\nCreating MainWindow instance...")
-        # Create the main application window
-        app = MainWindow(host=args.host)
-        print("MainWindow created successfully")
-        print("MainWindow root window ID:", app.root.winfo_id())
-        
-        # Make sure the window is visible
-        app.root.deiconify()
-        app.root.lift()
-        app.root.focus_force()
-        
-        # Handle application close
-        def on_closing():
-            if messagebox.askokcancel("Quit", "Do you want to quit the G-Code Debugger?"):
-                app.exit_application()
-        
-        app.root.protocol("WM_DELETE_WINDOW", on_closing)
-        
-        # Force an update of all pending GUI operations
-        app.root.update()
-        
-        print("Starting main event loop...")
-        app.run()
-        print("Main event loop ended")
-        
-    except KeyboardInterrupt:
-        print("\nApplication interrupted by user.")
-        sys.exit(0)
-    except Exception as e:
-        print(f"Fatal error: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        # Show error dialog
-        messagebox.showerror(
-            "Fatal Error", 
-            f"The application encountered a fatal error:\n\n{e}\n\nCheck the console for details."
-        )
-        
-        sys.exit(1)
-    finally:
-        # Make sure to clean up properly
-        if 'app' in locals():
-            app.exit_application()
+    # Create the main application window
+    app = MainWindow(host=args.host)
+    # Start the main event loop
+    app.root.mainloop()
 
 if __name__ == "__main__":
-    preferences = load_preferences()
-    sync_macros_on_startup(preferences["controller_url"], preferences["macros_path"])
     main()

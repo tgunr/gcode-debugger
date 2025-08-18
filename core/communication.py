@@ -38,10 +38,10 @@ class BBCtrlCommunicator:
         # Determine scheme based on port
         if self.port == 443:
             http_scheme = 'https'
-            ws_scheme = 'wss'
+            ws_scheme = 'wss://'
         else:
             http_scheme = 'http'
-            ws_scheme = 'ws'
+            ws_scheme = 'ws://'
 
         # Set up base URL for REST API calls
         self.base_url = f'{http_scheme}://{self.host}' if self.port in [80, 443] else f'{http_scheme}://{self.host}:{self.port}'
@@ -86,8 +86,6 @@ class BBCtrlCommunicator:
         self.msg_debug_handler = MsgDebugHandler(self._handle_msg_debug_output)
         self.debug_state_changes = False
 
-    """Handles WebSocket and HTTP communication with Buildbotics controller."""
-    # (Removed duplicate __init__ method)
         
     def set_callbacks(self, state_callback=None, message_callback=None, error_callback=None):
         """Set callback functions for various events."""
@@ -200,8 +198,6 @@ class BBCtrlCommunicator:
 
         try:
             self._stopping = False
-            # The close() method is now lightweight and safe to call here
-            self.close()
 
             # The thread is started here and handles everything else.
             self.ws_thread = threading.Thread(target=self._run_websocket, name="WebSocketThread", daemon=True)
@@ -217,19 +213,23 @@ class BBCtrlCommunicator:
     def _run_websocket(self):
         """Run the WebSocket client in a loop with enhanced error handling."""
         while not self._stopping:
+            print("[DEBUG] Creating new WebSocketApp instance")
+            self.ws = websocket.WebSocketApp(
+                self.ws_url,
+                on_open=self._on_open,
+                on_message=self._on_message,
+                on_error=self._on_error,
+                on_close=self._on_close
+            )
+            sslopt = {"cert_reqs": ssl.CERT_NONE} if self.ws_url.startswith('wss://') else {}
             try:
-                print("[DEBUG] Creating new WebSocketApp instance")
-                self.ws = websocket.WebSocketApp(
-                    self.ws_url,
-                    on_open=self._on_open,
-                    on_message=self._on_message,
-                    on_error=self._on_error,
-                    on_close=self._on_close
-                )
-                sslopt = {"cert_reqs": ssl.CERT_NONE} if self.ws_url.startswith('wss://') else {}
                 self.ws.run_forever(sslopt=sslopt)
+            except OSError as e:
+                print(f"[ERROR] WebSocket connection failed with OSError: {e}")
+                self._on_error(self.ws, e)
             except Exception as e:
-                print(f"[ERROR] Error in WebSocket run_forever: {e}")
+                print(f"[ERROR] An unexpected error occurred in run_forever: {e}")
+                self._on_error(self.ws, e)
             
             if not self._stopping:
                 self._reconnect_attempts += 1
@@ -286,11 +286,14 @@ class BBCtrlCommunicator:
 
     def _on_open(self, ws):
         """Handle WebSocket connection open."""
-        print("[INFO] WebSocket connection opened")
+        print("DEBUG: WebSocket connection established")
         self.connected = True
-        self._reconnect_attempts = 0  # Reset on successful connection
-        self.last_message_time = time.time()
+        self._reconnect_attempts = 0
+        self._reconnect_delay = 1
+        # Update state and request initial state
         self._call_callback(self.state_callback, {'connected': True})
+        # Request initial state to ensure UI is up to date
+        self._request_state()
         self._start_keepalive()
         self._request_state()
             
@@ -307,6 +310,9 @@ class BBCtrlCommunicator:
         
         print(f"[ERROR] {error_details}")
         self._call_callback(self.error_callback, error_details)
+        # Close the connection to allow run_forever to exit and trigger reconnection
+        if ws and ws.sock:
+            ws.close()
 
     
     def _on_close(self, ws, close_status_code, close_msg):
@@ -314,6 +320,9 @@ class BBCtrlCommunicator:
         print(f"[INFO] WebSocket connection closed. Code: {close_status_code}, Msg: '{close_msg}'")
         self.connected = False
         self._call_callback(self.state_callback, {'connected': False})
+        # Attempt to reconnect if the connection is closed unexpectedly
+        if not self._stopping:
+            self.connect_websocket()
     
     def _start_keepalive(self):
         """Start the keepalive thread that sends periodic pings to keep the connection alive."""

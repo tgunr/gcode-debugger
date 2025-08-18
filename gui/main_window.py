@@ -109,21 +109,27 @@ class MainWindow:
         self._setup_status_bar()
         self._setup_callbacks()
 
-        # Initial macro synchronisation to ensure UI matches controller
-        try:
-            if hasattr(self.macro_manager, "sync_bidirectional"):
-                print("DEBUG: Performing initial macro sync ...")
-                self.macro_manager.sync_bidirectional(self.communicator)
-        except Exception as e:
-            print(f"WARNING: Initial macro sync failed: {e}")
+        # Defer initialization that requires network or a stable UI
+        self.root.after(100, self._deferred_init)
 
-        # Refresh macro lists after sync
-        if hasattr(self, "macro_panel"):
-            self.macro_panel.refresh_macro_lists()
-        self._setup_keyboard_shortcuts()
-        
-        # Initialize connection
-        # Defer WebSocket connection until after mainloop starts
+        # Handle window closing
+        self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+
+    def _deferred_init(self):
+        """Perform initialization tasks after the main loop has started."""
+        # Initial macro sync in a background thread
+        def sync_macros_thread():
+            try:
+                print("DEBUG: Starting initial bidirectional macro sync...")
+                self.macro_manager.sync_bidirectional(self.communicator)
+                # Schedule UI refresh on the main thread after sync
+                self.root.after(0, self.macro_panel.start_initial_load)
+            except Exception as e:
+                print(f"WARNING: Initial macro sync failed: {e}")
+
+        threading.Thread(target=sync_macros_thread, daemon=True).start()
+
+        # Attempt WebSocket connection
         self.root.after(1000, self._attempt_connection)
 
     def _thread_safe_callback(self, func, *args, **kwargs):
@@ -719,51 +725,9 @@ class MainWindow:
 
     # Connection operations
     def _attempt_connection(self):
-        """Attempt to connect to the controller on startup and sync macros."""
-        try:
-            if self.communicator.connect_websocket():
-                self.connection_status.set("Connected")
-                self._log_message("Successfully connected to controller")
-                
-                # Request initial state
-                state = self.communicator.get_state()
-                if state:
-                    self._on_machine_state_changed(state)
-                
-                # Start position updates
-                self._start_position_updates()
-                
-                # Sync macros from controller in a background thread to avoid blocking the UI
-                def sync_macros():
-                    try:
-                        self._thread_safe_callback(self._log_message,
-                                                   "Starting macro synchronization from controller...",
-                                                   "blue")
-                        if self.macro_manager.sync_from_controller(self.communicator):
-                            self._thread_safe_callback(self._log_message,
-                                                       "Macro synchronization completed successfully",
-                                                       "green")
-                            # Refresh macro panel if it exists
-                            if hasattr(self, 'macro_panel') and self.macro_panel:
-                                self.root.after(0, self.macro_panel.refresh_macro_lists)
-                        else:
-                            self._thread_safe_callback(self._log_message,
-                                                       "Warning: Macro synchronization completed with issues",
-                                                       "orange")
-                    except Exception as e:
-                        self._thread_safe_callback(self._log_message,
-                                                   f"Error during macro synchronization: {e}",
-                                                   "red")
-                
-                # Start macro sync in a separate thread
-                threading.Thread(target=sync_macros, daemon=True).start()
-                
-            else:
-                self.connection_status.set("Not Connected")
-                self._log_message("Failed to connect to controller", "red")
-        except Exception as e:
-            self.connection_status.set("Not Connected")
-            self._log_message(f"Connection error: {e}", "red")
+        """Attempt to connect to the controller on startup."""
+        self._log_message("Attempting to connect to controller...", "yellow")
+        self.communicator.connect_websocket()
 
     def _on_connection_status_change(self, *args):
         """Update label color based on current connection status."""
@@ -872,16 +836,30 @@ class MainWindow:
                     is_connected = state['connected']
                     status_text = "Connected" if is_connected else "Not Connected"
                     self.connection_status.set(status_text)
-                    
-                    # Log the connection state change
+
                     color = "green" if is_connected else "red"
-                    self._log_message(f"Connection: {status_text}", color)
-                    
-                    # If we just connected, update the position display
-                    if is_connected and hasattr(self, '_update_position_display'):
-                        self._update_position_display()
-                    
-                    return  # Skip machine state processing for connection updates
+                    self._log_message(f"Connection state: {status_text}", color)
+
+                    if is_connected:
+                        # Start position updates on successful connection
+                        self._start_position_updates()
+
+                        # Sync macros in a background thread to avoid blocking the UI
+                        def sync_macros():
+                            try:
+                                self._thread_safe_callback(self._log_message, "Starting macro sync...", "blue")
+                                if self.macro_manager.sync_from_controller(self.communicator):
+                                    self._thread_safe_callback(self._log_message, "Macro sync completed", "green")
+                                    if hasattr(self, 'macro_panel') and self.macro_panel:
+                                        self.root.after(0, self.macro_panel.refresh_macro_lists)
+                                else:
+                                    self._thread_safe_callback(self._log_message, "Macro sync warning", "orange")
+                            except Exception as e:
+                                self._thread_safe_callback(self._log_message, f"Macro sync error: {e}", "red")
+                        
+                        threading.Thread(target=sync_macros, daemon=True).start()
+
+                    return
                 
                 # Handle machine state updates (original behavior)
                 if isinstance(state, dict):
@@ -1217,6 +1195,11 @@ Built for Buildbotics LLC
         """
         messagebox.showinfo("About G-Code Debugger", about_text)
     
+    def _on_closing(self):
+        """Handle the window closing event."""
+        if messagebox.askokcancel("Quit", "Do you want to quit the G-Code Debugger?"):
+            self.exit_application()
+    
     def exit_application(self):
         """Exit the application."""
         # Cleanup
@@ -1226,38 +1209,6 @@ Built for Buildbotics LLC
         self.root.quit()
         self.root.destroy()
     
-    def run(self):
-        """Run the application."""
-        print("\n" + "="*80)
-        print("Starting main application loop...")
-        print(f"Current thread: {threading.current_thread().name}")
-        print(f"Main thread: {threading.main_thread().name}")
-        print(f"Is main thread: {threading.current_thread() == threading.main_thread()}")
-        
-        # Force an update of all pending GUI operations
-        print("\nUpdating pending GUI operations...")
-        self.root.update()
-        print("GUI update complete")
-        
-        # Make sure the window is visible
-        print("\nEnsuring window is visible...")
-        self.root.deiconify()
-        self.root.lift()
-        self.root.focus_force()
-        print("Window visibility ensured")
-        
-        # Start the main event loop
-        print("\nStarting main event loop...")
-        try:
-            self.root.mainloop()
-            print("Main event loop ended normally")
-        except Exception as e:
-            print(f"ERROR in main event loop: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
-        finally:
-            print("Application shutdown complete")
 
 if __name__ == "__main__":
     app = MainWindow()

@@ -42,6 +42,9 @@ class MacroPanel(ttk.LabelFrame):
         self.after(100, self._process_ui_queue)
         
         self.setup_ui()
+    
+    def start_initial_load(self):
+        """Start the initial loading of macro lists after the UI is stable."""
         self._refresh_macro_lists()
     
     def setup_ui(self):
@@ -285,8 +288,7 @@ class MacroPanel(ttk.LabelFrame):
         # Initialize all UI elements before loading directory
         self._setup_controller_buttons(controller_btn_frame)
         
-        # Load the root directory after UI is fully initialized
-        self._load_directory(self.current_path)
+        # The root directory will be loaded when the tab is first selected.
         
     def _setup_controller_buttons(self, parent_frame):
         """Initialize all controller macro buttons in the specified parent frame."""
