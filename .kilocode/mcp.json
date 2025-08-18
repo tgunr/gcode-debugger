@@ -32,6 +32,16 @@
       "env": {
         "BRAVE_API_KEY": "BSAypBBMb1m4f1QupIQ7unxdQl9IMh1"
       }
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "env": {
+        "DEFAULT_MINIMUM_TOKENS": ""
+      }
     }
   }
 }
