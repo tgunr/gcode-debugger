@@ -297,13 +297,21 @@ class BBCtrlCommunicator:
     def _on_error(self, ws, error):
         """Handle WebSocket errors."""
         error_msg = f"WebSocket error: {error}"
-        print(f"[ERROR] {error_msg}")
-        self._call_callback(self.error_callback, error_msg)
+        error_details = f"WebSocket error: {error}. Type: {type(error).__name__}"
+        if isinstance(error, ws_exceptions.WebSocketConnectionClosedException):
+            error_details += " (Connection Closed)"
+        elif isinstance(error, ConnectionRefusedError):
+            error_details += " (Connection Refused)"
+        elif isinstance(error, socket.gaierror):
+            error_details += f" (DNS lookup failed for host: {self.host})"
+        
+        print(f"[ERROR] {error_details}")
+        self._call_callback(self.error_callback, error_details)
 
     
     def _on_close(self, ws, close_status_code, close_msg):
         """Handle WebSocket connection close."""
-        print(f"[INFO] WebSocket connection closed. Code: {close_status_code}, Msg: {close_msg}")
+        print(f"[INFO] WebSocket connection closed. Code: {close_status_code}, Msg: '{close_msg}'")
         self.connected = False
         self._call_callback(self.state_callback, {'connected': False})
     
