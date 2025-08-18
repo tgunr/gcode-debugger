@@ -44,7 +44,7 @@ class BBCtrlCommunicator:
             ws_scheme = 'ws'
 
         # Set up base URL for REST API calls
-        self.base_url = f'{http_scheme}://{self.host}/api' if self.port in [80, 443] else f'{http_scheme}://{self.host}:{self.port}/api'
+        self.base_url = f'{http_scheme}://{self.host}' if self.port in [80, 443] else f'{http_scheme}://{self.host}:{self.port}'
         
         # Set up WebSocket URL - ensure proper formatting for IP addresses and hostnames
         if '://' in str(self.host):
@@ -52,8 +52,16 @@ class BBCtrlCommunicator:
             self.ws_url = f'{self.host}/websocket'
         else:
             # Otherwise construct the URL properly
-            ws_host = f'[{self.host}]' if ':' in self.host and not self.host.startswith('[') else self.host
-            self.ws_url = f'{ws_scheme}://{ws_host}/websocket' if self.port in [80, 443] else f'{ws_scheme}://{ws_host}:{self.port}/websocket'
+            ws_host = self.host
+            # Remove any existing protocol
+            ws_host = ws_host.replace('ws://', '').replace('wss://', '')
+            # Remove any trailing slashes
+            ws_host = ws_host.rstrip('/')
+            # Construct the WebSocket URL
+            if self.port in [80, 443]:
+                self.ws_url = f'{ws_scheme}://{ws_host}/websocket'
+            else:
+                self.ws_url = f'{ws_scheme}://{ws_host}:{self.port}/websocket'
         print(f"DEBUG: BBCtrlCommunicator initialized with host: {self.host}, port: {self.port}")
         
         # Thread safety
@@ -92,7 +100,39 @@ class BBCtrlCommunicator:
         self.msg_debug_handler = MsgDebugHandler(self._handle_msg_debug_output)
         self.debug_state_changes = False
 
+    def _on_close(self, ws, close_status_code, close_msg):
+        """Handle WebSocket connection close."""
+        print(f"[INFO] WebSocket connection closed. Code: {close_status_code}, Msg: '{close_msg}'")
+        self.connected = False
+        self._call_callback(self.state_callback, {'connected': False})
         
+        # Clean up the WebSocket instance
+        if hasattr(self, 'ws'):
+            self.ws = None
+            
+    def _on_error(self, ws, error):
+        """Handle WebSocket errors."""
+        error_msg = f"WebSocket error: {error}"
+        error_details = f"WebSocket error: {error}. Type: {type(error).__name__}"
+        if isinstance(error, ws_exceptions.WebSocketConnectionClosedException):
+            error_details += " (Connection Closed)"
+        elif isinstance(error, ConnectionRefusedError):
+            error_details += " (Connection Refused)"
+        elif isinstance(error, socket.gaierror):
+            error_details += f" (Hostname resolution failed for {self.host})"
+            
+        print(f"[ERROR] {error_details}")
+        self.connected = False
+        self._call_callback(self.error_callback, error_msg)
+        
+        # Attempt to reconnect if not already stopping
+        if not self._stopping and self._should_reconnect():
+            self._schedule_reconnect()
+
+    def _should_reconnect(self):
+        # Implement your reconnect logic here
+        return True
+
     def set_callbacks(self, state_callback=None, message_callback=None, error_callback=None):
         """Set callback functions for various events."""
         if state_callback:
@@ -514,7 +554,6 @@ class BBCtrlCommunicator:
             else:
                 original[key] = value
         
-
     
     def get_state(self) -> Optional[Dict[str, Any]]:
         """Get current machine state via REST API."""

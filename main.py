@@ -53,11 +53,43 @@ def check_dependencies():
     
     return True
 
+def setup_communicator(host=None, port=None):
+    """Set up and return a configured BBCtrlCommunicator instance."""
+    from core.config import config
+    
+    # Get connection settings from config or use provided values
+    host = host or config.get('connection.host', '10.1.1.111')
+    port = port or config.get('connection.port', 80)
+    
+    print(f"Setting up communicator with host: {host}, port: {port}")
+    
+    # Initialize communicator
+    communicator = BBCtrlCommunicator(host=host, port=port)
+    
+    # Set up callbacks
+    def on_state_change(state):
+        print(f"[STATE] {state}")
+        
+    def on_message(msg):
+        print(f"[MESSAGE] {msg}")
+        
+    def on_error(error):
+        print(f"[ERROR] {error}")
+    
+    communicator.set_callbacks(
+        state_callback=on_state_change,
+        message_callback=on_message,
+        error_callback=on_error
+    )
+    
+    return communicator
+
 def main():
     """Main application entry point."""
     import argparse
     parser = argparse.ArgumentParser(description="G-Code Debugger for Buildbotics Controller")
     parser.add_argument('--host', type=str, help='The hostname or IP address of the Buildbotics controller.')
+    parser.add_argument('--port', type=int, help='The port number of the Buildbotics controller.')
     args = parser.parse_args()
 
     print("G-Code Debugger v1.0.0")
@@ -68,10 +100,18 @@ def main():
     if not check_dependencies():
         sys.exit(1)
     
-    # Create the main application window
-    app = MainWindow(host=args.host)
-    # Start the main event loop
-    app.root.mainloop()
+    try:
+        # Create the main application window
+        app = MainWindow(host=args.host)
+        
+        # Start the main event loop
+        app.root.mainloop()
+        
+    except Exception as e:
+        print(f"Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
-if __name__ == "__main__":
+if __name__ == "__main__":    
     main()

@@ -2,3 +2,4 @@ websocket-client>=1.0
 requests>=2.25
 pygments>=2.10
 configparser>=5.0
+Pillow>=10.0
