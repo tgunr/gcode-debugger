@@ -38,16 +38,22 @@ class BBCtrlCommunicator:
         # Determine scheme based on port
         if self.port == 443:
             http_scheme = 'https'
-            ws_scheme = 'wss://'
+            ws_scheme = 'wss'
         else:
             http_scheme = 'http'
-            ws_scheme = 'ws://'
+            ws_scheme = 'ws'
 
         # Set up base URL for REST API calls
-        self.base_url = f'{http_scheme}://{self.host}' if self.port in [80, 443] else f'{http_scheme}://{self.host}:{self.port}'
+        self.base_url = f'{http_scheme}://{self.host}/api' if self.port in [80, 443] else f'{http_scheme}://{self.host}:{self.port}/api'
         
-        # Set up WebSocket URL
-        self.ws_url = f'{ws_scheme}://{self.host}/websocket' if self.port in [80, 443] else f'{ws_scheme}://{self.host}:{self.port}/websocket'
+        # Set up WebSocket URL - ensure proper formatting for IP addresses and hostnames
+        if '://' in str(self.host):
+            # If host already has a scheme, use it directly
+            self.ws_url = f'{self.host}/websocket'
+        else:
+            # Otherwise construct the URL properly
+            ws_host = f'[{self.host}]' if ':' in self.host and not self.host.startswith('[') else self.host
+            self.ws_url = f'{ws_scheme}://{ws_host}/websocket' if self.port in [80, 443] else f'{ws_scheme}://{ws_host}:{self.port}/websocket'
         print(f"DEBUG: BBCtrlCommunicator initialized with host: {self.host}, port: {self.port}")
         
         # Thread safety
@@ -213,20 +219,34 @@ class BBCtrlCommunicator:
     def _run_websocket(self):
         """Run the WebSocket client in a loop with enhanced error handling."""
         while not self._stopping:
-            print("[DEBUG] Creating new WebSocketApp instance")
-            self.ws = websocket.WebSocketApp(
-                self.ws_url,
-                on_open=self._on_open,
-                on_message=self._on_message,
-                on_error=self._on_error,
-                on_close=self._on_close
-            )
-            sslopt = {"cert_reqs": ssl.CERT_NONE} if self.ws_url.startswith('wss://') else {}
             try:
-                self.ws.run_forever(sslopt=sslopt)
-            except OSError as e:
-                print(f"[ERROR] WebSocket connection failed with OSError: {e}")
-                self._on_error(self.ws, e)
+                print(f"[DEBUG] Creating new WebSocketApp instance for {self.ws_url}")
+                print(f"[DEBUG] Connection settings - Host: {self.host}, Port: {self.port}, URL: {self.ws_url}")
+                
+                # Validate host before attempting to connect
+                if not self.host:
+                    raise ValueError("No host specified for WebSocket connection")
+                    
+                self.ws = websocket.WebSocketApp(
+                    self.ws_url,
+                    on_open=self._on_open,
+                    on_message=self._on_message,
+                    on_error=self._on_error,
+                    on_close=self._on_close
+                )
+                
+                sslopt = {"cert_reqs": ssl.CERT_NONE} if self.ws_url.startswith('wss') else {}
+                
+                print(f"[DEBUG] Starting WebSocket connection to {self.ws_url}")
+                print(f"[DEBUG] Thread: {threading.current_thread().name} (ID: {threading.get_ident()})")
+                
+                # Add timeout to the WebSocket connection
+                self.ws.run_forever(
+                    sslopt=sslopt,
+                    ping_interval=30,
+                    ping_timeout=10,
+                    ping_payload='{"ping":1}'
+                )
             except Exception as e:
                 print(f"[ERROR] An unexpected error occurred in run_forever: {e}")
                 self._on_error(self.ws, e)
@@ -294,35 +314,92 @@ class BBCtrlCommunicator:
         self._call_callback(self.state_callback, {'connected': True})
         # Request initial state to ensure UI is up to date
         self._request_state()
-        self._start_keepalive()
-        self._request_state()
-            
-    def _on_error(self, ws, error):
-        """Handle WebSocket errors."""
-        error_msg = f"WebSocket error: {error}"
-        error_details = f"WebSocket error: {error}. Type: {type(error).__name__}"
-        if isinstance(error, ws_exceptions.WebSocketConnectionClosedException):
-            error_details += " (Connection Closed)"
-        elif isinstance(error, ConnectionRefusedError):
-            error_details += " (Connection Refused)"
-        elif isinstance(error, socket.gaierror):
-            error_details += f" (DNS lookup failed for host: {self.host})"
         
-        print(f"[ERROR] {error_details}")
-        self._call_callback(self.error_callback, error_details)
-        # Close the connection to allow run_forever to exit and trigger reconnection
-        if ws and ws.sock:
-            ws.close()
+    def _handle_msg_debug_output(self, msg_type: str, content: str):
+        """Handle MSG/DEBUG output from local processing."""
+        formatted_message = f"[{msg_type}] {content}"
+        self._call_callback(self.message_callback, formatted_message)
+        
+    def connect_websocket(self):
+        """Connect to the WebSocket for real-time communication."""
+        if self.connected or (self.ws_thread and self.ws_thread.is_alive()):
+            print("[DEBUG] WebSocket already connected or connecting.")
+            return True
 
-    
-    def _on_close(self, ws, close_status_code, close_msg):
-        """Handle WebSocket connection close."""
-        print(f"[INFO] WebSocket connection closed. Code: {close_status_code}, Msg: '{close_msg}'")
-        self.connected = False
-        self._call_callback(self.state_callback, {'connected': False})
-        # Attempt to reconnect if the connection is closed unexpectedly
-        if not self._stopping:
-            self.connect_websocket()
+        if not self._connection_lock.acquire(blocking=False):
+            print("[DEBUG] Connection attempt already in progress.")
+            return True
+
+        try:
+            self._stopping = False
+            print(f"[DEBUG] Starting WebSocket connection to {self.ws_url}")
+            
+            # The thread is started here and handles everything else.
+            self.ws_thread = threading.Thread(
+                target=self._run_websocket, 
+                name="WebSocketThread", 
+                daemon=True
+            )
+            self.ws_thread.start()
+            return True
+        except Exception as e:
+            print(f"[ERROR] Error initiating WebSocket connection: {e}")
+            self._call_callback(self.error_callback, f"Failed to connect: {e}")
+            return False
+        finally:
+            self._connection_lock.release()
+                    
+    def _run_websocket(self):
+        """Run the WebSocket client in a loop with enhanced error handling."""
+        while not self._stopping:
+            try:
+                print(f"[DEBUG] Creating new WebSocketApp instance for {self.ws_url}")
+                print(f"[DEBUG] Connection settings - Host: {self.host}, Port: {self.port}")
+                    
+                # Validate host before attempting to connect
+                if not self.host:
+                    raise ValueError("No host specified for WebSocket connection")
+                        
+                self.ws = websocket.WebSocketApp(
+                    self.ws_url,
+                    on_open=self._on_open,
+                    on_message=self._on_message,
+                    on_error=self._on_error,
+                    on_close=self._on_close
+                )
+                    
+                sslopt = {"cert_reqs": ssl.CERT_NONE} if self.ws_url.startswith('wss') else {}
+                
+                # Add timeout to the WebSocket connection
+                self.ws.run_forever(
+                    sslopt=sslopt,
+                    ping_interval=30,
+                    ping_timeout=10,
+                    ping_payload='{"ping":1}'
+                )
+                
+                # If we get here, the connection was closed
+                print("[INFO] WebSocket connection closed")
+                self.connected = False
+                self._call_callback(self.state_callback, {'connected': False})
+                
+                # Add a small delay before attempting to reconnect
+                time.sleep(1)
+                
+            except Exception as e:
+                print(f"[ERROR] An unexpected error occurred in WebSocket: {e}")
+                self.connected = False
+                self._call_callback(self.state_callback, {'connected': False})
+                
+                # Add a delay before retrying
+                time.sleep(2)
+                
+            # Attempt to reconnect if not stopping
+            if not self._stopping and self._should_reconnect():
+                print("[INFO] Attempting to reconnect...")
+                time.sleep(min(self._reconnect_delay * 2, 60))  # Exponential backoff with max 60s
+            else:
+                break
     
     def _start_keepalive(self):
         """Start the keepalive thread that sends periodic pings to keep the connection alive."""
