@@ -217,9 +217,7 @@ class BBCtrlCommunicator:
                 origin_scheme = 'https' if self.ws_url.startswith('wss://') else 'http'
                 
                 # Build minimal headers – controller rejects unexpected Origin
-                ws_headers = {
-                    'Origin': f'{origin_scheme}://{self.host}'
-                }
+                ws_headers = {}
 
                 # Create WebSocketApp instance – disable per-message deflate
                 self.ws = websocket.WebSocketApp(
