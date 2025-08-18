@@ -25,12 +25,15 @@ from urllib.parse import urlparse, urlunparse
 
 # Import local modules
 from .msg_debug_handler import MsgDebugHandler
+from .config import get_config
+
+config = get_config()
 
 class BBCtrlCommunicator:
-    def __init__(self, host='bbctrl.polymicro.net', port=80, callback_scheduler=None):
+    def __init__(self, host=None, port=None, callback_scheduler=None):
         # Connection settings
-        self.host = host
-        self.port = port
+        self.host = host if host is not None else config.get('connection.host')
+        self.port = port if port is not None else config.get('connection.port')
 
         # Determine scheme based on port
         if self.port == 443:
@@ -45,6 +48,7 @@ class BBCtrlCommunicator:
         
         # Set up WebSocket URL
         self.ws_url = f'{ws_scheme}://{self.host}/websocket' if self.port in [80, 443] else f'{ws_scheme}://{self.host}:{self.port}/websocket'
+        print(f"DEBUG: BBCtrlCommunicator initialized with host: {self.host}, port: {self.port}")
         
         # Thread safety
         self._lock = threading.RLock()
@@ -1281,67 +1285,54 @@ class BBCtrlCommunicator:
             
             print("[INFO] WebSocket connection closed")
 
-    def write_file(self, file_path: str, content: str) -> bool:
-        """Write content to a file on the controller.
-        
-        Args:
-            file_path: Destination path relative to controller root
-            content: File contents to write
-        
-        Returns:
-            True if file was successfully written, False otherwise
-        """
+    def write_file(self, file_path: str, content: str) -> tuple[bool, str]:
+        """Write content to a file on the controller, returning success and a message."""
+        if not self.connected:
+            error_msg = "Not connected, cannot write file."
+            print(f"[ERROR] {error_msg}")
+            return False, error_msg
+
         try:
-            from urllib.parse import quote
+            # Ensure the path is correctly formatted (no leading slash for API)
+            if file_path.startswith('/'):
+                file_path = file_path[1:]
+
+            url = f"{self.base_url}/api/fs/{file_path}"
+            headers = {'Content-Type': 'text/plain'}
             
-            # URL encode the file path
-            encoded_path = quote(file_path, safe='/')
-            url = f'{self.base_url}/api/fs/{encoded_path}'
+            print(f"[DEBUG] Writing to {url}")
+            response = requests.put(url, data=content.encode('utf-8'), headers=headers, timeout=10)
             
-            # Set appropriate headers
-            headers = {
-                'Content-Type': 'text/plain',
-            }
+            response.raise_for_status()  # Raise an exception for bad status codes
             
-            # Send PUT request to write file
-            response = requests.put(url, data=content, headers=headers, timeout=10)
+            success_msg = f"Successfully wrote to {file_path}"
+            print(f"[INFO] {success_msg}")
+            return True, success_msg
             
-            if response.status_code in (200, 201, 204):
-                print(f"DEBUG: Successfully wrote file {file_path}")
-                return True
-            else:
-                error_msg = f"Failed to write file {file_path}: HTTP {response.status_code}"
-                print(f"ERROR: {error_msg}")
-                if response.text:
-                    print(f"Response body: {response.text[:500]}")
-                
-                # Call error callback if available
-                if hasattr(self, 'error_callback') and self.error_callback:
-                    self._call_callback(self.error_callback, error_msg)
-                
-                return False
-        
+        except requests.exceptions.HTTPError as e:
+            error_message = f"HTTP error writing to {file_path}: {e.response.status_code} {e.response.reason}"
+            try:
+                # Try to get more detailed error from response
+                error_details = e.response.json()
+                if 'error' in error_details:
+                    error_message += f" - {error_details['error']}"
+            except:
+                pass
+            print(f"[ERROR] {error_message}")
+            self._call_callback(self.error_callback, error_message)
+            return False, error_message
+            
         except requests.exceptions.RequestException as e:
-            error_msg = f"Network error writing file {file_path}: {str(e)}"
-            print(f"ERROR: {error_msg}")
+            error_message = f"Error writing to {file_path}: {e}"
+            print(f"[ERROR] {error_message}")
+            self._call_callback(self.error_callback, error_message)
+            return False, error_message
             
-            # Call error callback if available
-            if hasattr(self, 'error_callback') and self.error_callback:
-                self._call_callback(self.error_callback, error_msg)
-            
-            return False
-        
         except Exception as e:
-            error_msg = f"Unexpected error writing file {file_path}: {str(e)}"
-            print(f"ERROR: {error_msg}")
-            import traceback
-            traceback.print_exc()
-            
-            # Call error callback if available
-            if hasattr(self, 'error_callback') and self.error_callback:
-                self._call_callback(self.error_callback, error_msg)
-            
-            return False
+            error_message = f"An unexpected error occurred while writing to {file_path}: {e}"
+            print(f"[ERROR] {error_message}")
+            self._call_callback(self.error_callback, error_message)
+            return False, error_message
 
 class CommunicationError(Exception):
     """Custom exception for communication errors."""

@@ -27,6 +27,7 @@ class CodeEditor(ttk.Frame):
         self.current_line = 0
         self.context_window_size = 15
         self._is_modified = False  # Track if content has been modified
+        self._is_loading = False
         self._original_content = ""  # Store original content for comparison
         
         # Colors and fonts
@@ -173,6 +174,8 @@ class CodeEditor(ttk.Frame):
     
     def has_unsaved_changes(self) -> bool:
         """Check if there are unsaved changes in the editor."""
+        if self._is_loading:
+            return False
         current_content = self.text_widget.get('1.0', 'end-1c')
         
         # Normalize content by stripping trailing whitespace and normalizing line endings
@@ -218,7 +221,7 @@ class CodeEditor(ttk.Frame):
         
         return has_changes
     
-    def clear_modified_flag(self, log_caller=True, force_reset=False):
+    def clear_modified_flag(self, log_caller=True, force_reset=False, update_original_content=True):
         """Comprehensive method to clear modified flags with enhanced logging and error handling.
         
         Args:
@@ -265,8 +268,10 @@ class CodeEditor(ttk.Frame):
         
         # Reset modified state
         if needs_reset:
+            if update_original_content:
+                self._original_content = current_content
+
             self._is_modified = False
-            self._original_content = current_content
             
             # Clear Tkinter's modified flag
             try:
@@ -303,6 +308,7 @@ class CodeEditor(ttk.Frame):
     
     def load_gcode(self, parser: GCodeParser):
         """Load G-code from parser into the editor."""
+        self._is_loading = True
         self.parser = parser
         
         # Clear existing content
@@ -326,6 +332,7 @@ class CodeEditor(ttk.Frame):
         self._update_line_numbers()
         self._apply_syntax_highlighting()
         self._mark_modified_lines()
+        self._is_loading = False
     
     def load_text_content(self, content: str, title: str = "Text Content"):
         """Load text content directly into the editor (for viewing macros, etc.)."""
@@ -333,11 +340,15 @@ class CodeEditor(ttk.Frame):
         self.text_widget.delete('1.0', tk.END)
         
         # Clear parser since we're not loading from a parser
-        self.parser = None
+        self._is_loading = True
+        try:
+            self.text_widget.delete('1.0', tk.END)
+            self.text_widget.insert('1.0', content)
+            self.text_widget.edit_modified(False)
+            self._original_content = self.get_content()
+        finally:
+            self._is_loading = False
         
-        # Insert content
-        self.text_widget.insert('1.0', content)
-        self._original_content = self.text_widget.get('1.0', 'end-1c')
         print(f"DEBUG: load_text_content set _original_content len: {len(self._original_content)}, last 10: {repr(self._original_content[-10:])}")
         self._is_modified = False
         

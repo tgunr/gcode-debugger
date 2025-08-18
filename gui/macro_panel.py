@@ -620,29 +620,7 @@ class MacroPanel(ttk.LabelFrame):
         else:
             return f"{size:.1f} {size_names[i]}"
             
-    def _refresh_macro_lists(self):
-        """Refresh both macro list displays."""
-        self._refresh_local_macro_list()
-        self._refresh_controller_macro_list()
-
-    def _refresh_local_macro_list(self):
-        """Refresh the local macro list display."""
-        self.local_macro_listbox.delete(0, tk.END)
-        
-        local_macros = self.local_macro_manager.get_all_local_macros()
-        for macro in sorted(local_macros, key=lambda m: (m.category, m.name)):
-            # Color code by category
-            color_prefix = self._get_category_prefix(macro.category)
-            display_text = f"{color_prefix} {macro.name}"
-            if macro.description:
-                display_text += f" - {macro.description[:25]}"
-                if len(macro.description) > 25:
-                    display_text += "..."
-            
-            self.local_macro_listbox.insert(tk.END, display_text)
-        
-        self._update_local_button_states()
-    
+     
     def _open_file(self, file_path):
         """Open a file for viewing/editing in a thread-safe way."""
         main_window = self._get_main_window()
@@ -692,7 +670,7 @@ class MacroPanel(ttk.LabelFrame):
                 
                 # Mark as clean
                 if hasattr(main_window.code_editor, 'clear_modified_flag'):
-                    main_window.code_editor.clear_modified_flag()
+                    main_window.code_editor.clear_modified_flag(update_original_content=False)
                 
                 # Apply syntax highlighting
                 main_window.code_editor.highlight_all()
@@ -1071,473 +1049,234 @@ class MacroPanel(ttk.LabelFrame):
     # External macro event handlers
         
     def _save_current_macro(self, main_window) -> bool:
-        """Save the current macro content back to the macro manager.
-        
+        """Save the current macro content back to the appropriate manager.
+
         Returns:
-            bool: True if save was successful, False otherwise.
+            bool: True if save was successful or initiated, False otherwise.
         """
-        print("DEBUG: _save_current_macro called")
-        
         if not hasattr(main_window, 'code_editor'):
-            print("DEBUG: No code_editor in main_window")
             return False
-            
-        if not hasattr(main_window, 'debugger'):
-            print("DEBUG: No debugger in main_window")
-            return False
-            
-        try:
-            # Get the current content from the editor
-            content = main_window.code_editor.text_widget.get('1.0', tk.END).strip()
-            print(f"DEBUG: Got editor content, length: {len(content)}")
-            
-            # Get the current tab (local or controller macros)
-            try:
-                current_tab = self.notebook.tab(self.notebook.select(), "text").lower()
-                print(f"DEBUG: Current tab text: '{current_tab}'")
-                
-                # Check if this is a local macro tab (handle emoji prefix)
-                is_local = 'local' in current_tab
-                print(f"DEBUG: Detected macro type: {'local' if is_local else 'controller'}")
-                
-                # For controller files, handle them as raw files (not macros)
-                if not is_local:
-                    print("DEBUG: In controller save branch")
-                    # Check if we have a selected controller file
-                    if not hasattr(self, 'selected_macro') or self.selected_macro is None:
-                        print("DEBUG: No controller file selected, cannot save")
-                        return False
-                    
-                    # For controller files, we need to save back to the controller
-                    print(f"DEBUG: Attempting to save controller file: {self.selected_macro.name}")
-                    
-                    # Get the file path from the selected macro
-                    if hasattr(self.selected_macro, 'path'):
-                        file_path = self.selected_macro.path
-                        print(f"DEBUG: Controller file path: {file_path}")
-                        
-                        # Save the content back to the controller
-                        try:
-                            # Prioritize main_window.comm, then self.comm
-                            comm_obj = getattr(main_window, 'comm', None) or getattr(self, 'comm', None)
-                            
-                            if comm_obj is None:
-                                print("DEBUG: No communication object available")
-                                messagebox.showerror("Save Error", "No communication object available to save file.")
-                                return False
-                            
-                            # Verify communication object has write_file method
-                            if not hasattr(comm_obj, 'write_file'):
-                                print("DEBUG: Communication object lacks write_file method")
-                                messagebox.showerror("Save Error", "Communication method not supported.")
-                                return False
-                            
-                            # Attempt to save
-                            print("DEBUG: Attempting to save via communication object")
-                            success = comm_obj.write_file(file_path, content)
-                            
-                            if success:
-                                print(f"DEBUG: Successfully saved file to {file_path}")
-                                # Optionally, show a success message
-                                messagebox.showinfo("Save Successful", f"File '{self.selected_macro.name}' saved.")
-                                return True
-                            else:
-                                print(f"DEBUG: Failed to save file to {file_path}")
-                                messagebox.showerror("Save Error", f"Failed to save file '{self.selected_macro.name}'.")
-                                return False
-                            
-                        except Exception as e:
-                            print(f"DEBUG: Comprehensive save error: {e}")
-                            import traceback
-                            traceback.print_exc()
-                            messagebox.showerror("Save Error", f"An error occurred while saving: {e}")
-                            return False
-                    else:
-                        print("DEBUG: Selected macro has no path attribute")
-                        messagebox.showerror("Save Error", "Cannot determine file path for saving.")
-                        return False
-                
-                print("DEBUG: In local macro save branch")
-                if self.selected_local_macro:
-                    print(f"DEBUG: Selected local macro: {self.selected_local_macro.name}")
-                    # Update the macro in the manager
-                    success = self.local_macro_manager.update_local_macro(
-                        self.selected_local_macro.name,
-                        commands=content.splitlines(),
-                        description=self.selected_local_macro.description,
-                        category=self.selected_local_macro.category
-                    )
-                    print(f"DEBUG: update_local_macro result: {success}")
-                    if success:
-                        print("DEBUG: Local macro updated successfully")
-                        # Clear modified flag in editor
-                        if hasattr(main_window.code_editor, 'clear_modified_flag'):
-                            main_window.code_editor.clear_modified_flag()
-                        return True
-                    else:
-                        print("DEBUG: Failed to update local macro")
-                        messagebox.showerror("Save Error", f"Failed to update local macro '{self.selected_local_macro.name}'.")
-                        return False
-                else:
-                    print("DEBUG: No selected local macro")
-                    messagebox.showerror("Save Error", "No local macro selected for saving.")
-                    return False
-                
-            except Exception as e:
-                print(f"DEBUG: Error in tab detection or macro update: {e}")
-                import traceback
-                traceback.print_exc()
-                messagebox.showerror("Save Error", f"An unexpected error occurred: {e}")
+
+        content = main_window.code_editor.text_widget.get('1.0', tk.END).strip()
+        current_tab_text = self.notebook.tab(self.notebook.select(), "text").lower()
+        is_local = 'local' in current_tab_text
+
+        if is_local:
+            return self._save_local_macro(main_window, content)
+        else:
+            return self._save_controller_file(main_window, content)
+
+    def _save_local_macro(self, main_window, content: str) -> bool:
+        """Saves the content of the editor to a local macro."""
+        if self.selected_local_macro:
+            success = self.local_macro_manager.update_local_macro(
+                self.selected_local_macro.name,
+                commands=content.splitlines(),
+                description=self.selected_local_macro.description,
+                category=self.selected_local_macro.category
+            )
+            if success:
+                if hasattr(main_window.code_editor, 'clear_modified_flag'):
+                    main_window.code_editor.clear_modified_flag()
+                return True
+            else:
+                messagebox.showerror("Save Error", f"Failed to update local macro '{self.selected_local_macro.name}'.")
                 return False
-                    
-        except Exception as e:
-            print(f"ERROR in _save_current_macro: {e}", file=sys.stderr)
-            import traceback
-            traceback.print_exc()
-            messagebox.showerror("Save Error", f"An unexpected error occurred: {e}")
+        else:
+            messagebox.showerror("Save Error", "No local macro selected for saving.")
             return False
-    
+
+    def _save_controller_file(self, main_window, content: str) -> bool:
+        """Saves the content of the editor to a file on the controller asynchronously."""
+        if not hasattr(self, 'selected_macro') or self.selected_macro is None:
+            messagebox.showerror("Save Error", "No controller file selected.")
+            return False
+
+        if not hasattr(self.selected_macro, 'path'):
+            messagebox.showerror("Save Error", "Cannot determine file path for saving.")
+            return False
+
+        file_path = self.selected_macro.path
+        comm_obj = getattr(main_window, 'comm', self.comm)
+
+        if not (comm_obj and hasattr(comm_obj, 'write_file')):
+            messagebox.showerror("Save Error", "Communication method not supported or not available.")
+            return False
+
+        def save_controller_file_async():
+            """Background task to save file to controller."""
+            try:
+                save_success, error_msg = comm_obj.write_file(file_path, content)
+                if save_success:
+                    self._queue_ui_update(messagebox.showinfo, "Save Success", f"File '{os.path.basename(file_path)}' saved successfully.")
+                    if hasattr(main_window.code_editor, 'clear_modified_flag'):
+                        self._queue_ui_update(main_window.code_editor.clear_modified_flag)
+                else:
+                    final_msg = error_msg or f"Failed to save file '{os.path.basename(file_path)}' to controller."
+                    self._queue_ui_update(messagebox.showerror, "Error", final_msg)
+            except Exception as e:
+                self._queue_ui_update(messagebox.showerror, "Error", f"An unexpected error occurred while saving: {e}")
+
+        threading.Thread(target=save_controller_file_async, daemon=True).start()
+        return True
+
     def _prompt_save_changes(self, main_window) -> bool:
         """Prompt the user to save changes if there are any unsaved changes.
-        
+
         Returns:
             bool: True if the user wants to continue (saved or discarded changes),
                   False if the user cancelled the operation.
         """
-        # If we can't reach the editor, allow operation to continue
         if not hasattr(main_window, 'code_editor'):
             return True
 
         editor = main_window.code_editor
+        if not (hasattr(editor, 'has_unsaved_changes') and editor.has_unsaved_changes()):
+            return True
 
-        def _is_dirty():
-            """Detect whether the editor has unsaved changes using several fallbacks."""
-            print("\n" + "="*80)
-            print("DEBUG: Comprehensive Dirty State Check")
-            print(f"DEBUG: Editor object: {editor}")
-            print(f"DEBUG: Main Window object: {main_window}")
-            
-            # Detailed attribute and method inspection
-            print("\nDEBUG: Inspecting editor attributes and methods:")
-            for attr in ['has_unsaved_changes', 'is_editor_dirty', 'text_widget', '_original_content']:
-                print(f"  - hasattr(editor, '{attr}'): {hasattr(editor, attr)}")
-                if hasattr(editor, attr):
-                    try:
-                        value = getattr(editor, attr)
-                        print(f"    Value: {repr(value)}")
-                        if callable(value):
-                            print(f"    Callable: {value}")
-                    except Exception as e:
-                        print(f"    Error accessing {attr}: {e}")
-            
-            try:
-                # Preferred explicit APIs
-                if hasattr(editor, 'has_unsaved_changes') and callable(editor.has_unsaved_changes):
-                    print("\nDEBUG: Using has_unsaved_changes")
-                    result = editor.has_unsaved_changes()
-                    print(f"DEBUG: has_unsaved_changes returned: {result}")
-                    if result:
-                        print("DEBUG: Current content:", repr(editor.text_widget.get('1.0', 'end-1c')))
-                        print("DEBUG: Original content:", repr(editor._original_content))
-                        return result
+        response = messagebox.askyesnocancel(
+            "Unsaved Changes",
+            "You have unsaved changes. Do you want to save them?",
+            icon='warning',
+            parent=self
+        )
 
-                if hasattr(editor, 'is_editor_dirty') and callable(editor.is_editor_dirty):
-                    print("\nDEBUG: Using is_editor_dirty")
-                    result = editor.is_editor_dirty()
-                    print(f"DEBUG: is_editor_dirty returned: {result}")
-                    if result:
-                        return result
-            except Exception as e:
-                print(f"DEBUG: Exception in explicit APIs: {e}")
-                import traceback
-                traceback.print_exc()
-
-            # Fallback: Tk Text widget modified flag
-            try:
-                if hasattr(editor, 'text_widget') and hasattr(editor.text_widget, 'edit_modified'):
-                    modified = bool(editor.text_widget.edit_modified())
-                    print(f"\nDEBUG: Tk edit_modified: {modified}")
-                    if modified:
-                        print("DEBUG: Current content:", repr(editor.text_widget.get('1.0', 'end-1c')))
-                        print("DEBUG: Original content:", repr(editor._original_content))
-                    return modified
-            except Exception as e:
-                print(f"DEBUG: Exception in Tk fallback: {e}")
-                import traceback
-                traceback.print_exc()
-
-            # Last resort: ask the main window, if it exposes a helper
-            try:
-                if hasattr(main_window, 'is_editor_dirty') and callable(main_window.is_editor_dirty):
-                    dirty = bool(main_window.is_editor_dirty())
-                    print(f"\nDEBUG: main_window is_editor_dirty: {dirty}")
-                    return dirty
-            except Exception as e:
-                print(f"DEBUG: Exception in main_window fallback: {e}")
-                import traceback
-                traceback.print_exc()
-
-            print("\nDEBUG: All checks passed, returning False")
-            print("="*80 + "\n")
+        if response is None:  # Cancel
             return False
+        if response is True:  # Yes, save
+            if not self._save_current_macro(main_window):
+                # If save fails, ask user if they still want to proceed
+                return messagebox.askyesno("Save Failed", "Could not save changes. Continue and discard changes?", parent=self)
+        
+        # If we are here, it's either No (discard) or a successful save
+        return True
 
-        try:
-            if not _is_dirty():
-                return True
-
-            response = messagebox.askyesnocancel(
-                "Unsaved Changes",
-                "You have unsaved changes in the editor. Do you want to save them?\n"
-                "Click 'Yes' to save, 'No' to discard changes, or 'Cancel' to stay.",
-                icon='warning',
-                parent=self
-            )
-
-            if response is None:  # Cancel
-                return False
-
-            if response is True:  # Yes -> Save
-                if not self._save_current_macro(main_window):
-                    messagebox.showerror("Error", "Failed to save changes to macro.", parent=self)
-                    return False
-
-            # Either saved or discarded: clear modified flags everywhere we can
-            try:
-                if hasattr(editor, 'clear_modified_flag') and callable(editor.clear_modified_flag):
-                    editor.clear_modified_flag()
-                if hasattr(editor, 'mark_editor_clean') and callable(editor.mark_editor_clean):
-                    editor.mark_editor_clean()
-                if hasattr(editor, 'text_widget') and hasattr(editor.text_widget, 'edit_modified'):
-                    editor.text_widget.edit_modified(False)
-                if hasattr(main_window, 'mark_editor_clean') and callable(main_window.mark_editor_clean):
-                    main_window.mark_editor_clean()
-            except Exception:
-                pass
-
-            return True
-
-        except Exception as e:
-            print(f"Error checking for unsaved changes: {e}")
-            # Don't block navigation on error
-            return True
-    
     def _load_macro_into_editor(self, macro, is_local=True):
         """Load macro content into the debugger panel."""
-        import tempfile
-        import os
-        
-        # Get the main window
         main_window = self._get_main_window()
         if not main_window or not hasattr(main_window, 'debugger'):
             messagebox.showerror("Error", "Could not access the debugger components.")
             return
-            
-        # Check for unsaved changes
+
         if not self._prompt_save_changes(main_window):
-            return  # User cancelled the operation
-            
+            return
+
         try:
-            # Create a header for the macro
             macro_type = "Local" if is_local else "Controller"
             macro_content = f"; {macro_type} Macro: {macro.name}\n"
-            
             if hasattr(macro, 'description') and macro.description:
                 macro_content += f"; Description: {macro.description}\n"
             if is_local and hasattr(macro, 'category') and macro.category:
                 macro_content += f"; Category: {macro.category}\n"
-            elif hasattr(macro, 'group') and macro.group:
-                macro_content += f"; Group: {macro.group}\n"
-                
             macro_content += ";\n"
-            
-            # Add the macro commands
             macro_content += '\n'.join(macro.commands)
-            
-            # Create a temporary file with the macro content
+
             with tempfile.NamedTemporaryFile(mode='w', suffix='.gcode', delete=False) as temp_file:
                 temp_file.write(macro_content)
                 temp_path = temp_file.name
-            
+
             try:
-                # Load the temporary file using the debugger's load_file method
                 if main_window.debugger.load_file(temp_path):
-                    # Update window title and status
                     main_window.current_file_path = f"[{macro_type} Macro] {macro.name}"
                     if hasattr(main_window, 'file_status'):
                         main_window.file_status.set(f"Viewing: {macro.name} ({macro_type} Macro)")
-                    
-                    # Log the action
-                    if hasattr(main_window, '_log_message'):
-                        main_window._log_message(f"Loaded {macro_type.lower()} macro '{macro.name}' into debugger")
-                    
-                    # Update the code editor if available
-                    if hasattr(main_window, 'code_editor') and hasattr(main_window.code_editor, 'load_gcode'):
-                        main_window.code_editor.load_gcode(main_window.debugger.parser)
-                        
-                        # Clear the modified flag since we just loaded new content
-                        if hasattr(main_window.code_editor, 'clear_modified_flag'):
-                            main_window.code_editor.clear_modified_flag()
+                    main_window.code_editor.load_gcode(main_window.debugger.parser)
+                    main_window.code_editor.clear_modified_flag()
                 else:
-                    raise Exception("Failed to load macro content")
-                    
+                    raise Exception("Failed to load macro content into debugger.")
             finally:
-                # Clean up the temporary file
-                try:
-                    if os.path.exists(temp_path):
-                        os.unlink(temp_path)
-                except Exception as e:
-                    print(f"Warning: Failed to delete temporary file: {e}")
-            
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
         except Exception as e:
-            error_msg = f"Failed to load macro into debugger: {e}"
-            messagebox.showerror("Error", error_msg)
-            if hasattr(main_window, '_log_message'):
-                main_window._log_message(f"Error loading macro: {str(e)}", color="red")
-    
+            messagebox.showerror("Error", f"Failed to load macro into debugger: {e}")
+
     def _update_controller_button_states(self):
-        """Update controller macro button enabled/disabled states.
-        
-        This method updates the state of all controller macro buttons based on the current selection
-        and execution state. It ensures that buttons are only enabled when their actions are valid.
-        """
-        # Get the main window to check execution state
+        """Update controller macro button enabled/disabled states."""
         main_window = self._get_main_window()
         is_executing = hasattr(main_window, 'is_controller_macro_executing') and main_window.is_controller_macro_executing()
         has_selection = self.selected_macro is not None
-        
-        # Update button states
-        self.controller_execute_btn.config(
-            state=tk.NORMAL if (has_selection and not is_executing) else tk.DISABLED
-        )
-        self.controller_stop_btn.config(
-            state=tk.NORMAL if is_executing else tk.DISABLED
-        )
-        self.controller_delete_btn.config(
-            state=tk.NORMAL if (has_selection and not is_executing) else tk.DISABLED
-        )
-        self.controller_export_btn.config(
-            state=tk.NORMAL if (has_selection and not is_executing) else tk.DISABLED
-        )
-        self.controller_import_btn.config(
-            state=tk.NORMAL if not is_executing else tk.DISABLED
-        )
-        self.controller_new_btn.config(
-            state=tk.NORMAL if not is_executing else tk.DISABLED
-        )
-    
-    # Local macro execution and management methods
+
+        self.controller_execute_btn.config(state=tk.NORMAL if has_selection and not is_executing else tk.DISABLED)
+        self.controller_stop_btn.config(state=tk.NORMAL if is_executing else tk.DISABLED)
+        self.controller_delete_btn.config(state=tk.NORMAL if has_selection and not is_executing else tk.DISABLED)
+        self.controller_export_btn.config(state=tk.NORMAL if has_selection and not is_executing else tk.DISABLED)
+        self.controller_import_btn.config(state=tk.NORMAL if not is_executing else tk.DISABLED)
+        self.controller_new_btn.config(state=tk.NORMAL if not is_executing else tk.DISABLED)
+
     def _on_execute_local_macro(self, event=None):
         """Execute the selected local macro."""
         if not self.selected_local_macro:
             return
-        
-        # Get main window and execute local macro
         main_window = self._get_main_window()
         if main_window and hasattr(main_window, 'execute_local_macro'):
             main_window.execute_local_macro(self.selected_local_macro.name)
-            self.local_stop_btn.config(state=tk.NORMAL)
-    
+
     def _on_stop_local_macro(self):
         """Stop local macro execution."""
         main_window = self._get_main_window()
-        if main_window and hasattr(main_window, 'local_macro_executor'):
-            main_window.local_macro_executor.cancel_execution()
-            self.local_stop_btn.config(state=tk.DISABLED)
-    
+        if main_window and hasattr(main_window, 'stop_local_macro'):
+            main_window.stop_local_macro()
+
     def _on_new_local_macro(self):
         """Create a new local macro."""
-        try:
-            dialog = LocalMacroEditDialog(self, "Create New Local Macro")
-            if dialog.result:
-                name, description, commands, category = dialog.result
-                if self.local_macro_manager.create_local_macro(name, commands, description, category):
-                    self._refresh_local_macro_list()
-                    messagebox.showinfo("Success", f"Local macro '{name}' created successfully!")
-                else:
-                    messagebox.showerror("Error", f"Failed to create local macro '{name}'. Name may already exist.")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to create local macro dialog: {e}")
-    
-    def _on_edit_local_macro(self):
-        """Edit the selected local macro."""
-        if not self.selected_local_macro:
-            return
-        
-        dialog = LocalMacroEditDialog(self, "Edit Local Macro", self.selected_local_macro)
+        dialog = LocalMacroEditDialog(self, "Create New Local Macro")
         if dialog.result:
             name, description, commands, category = dialog.result
-            if self.local_macro_manager.update_local_macro(
-                name, 
-                commands=commands, 
-                description=description, 
-                category=category
-            ):
+            if self.local_macro_manager.create_local_macro(name, commands, description, category):
                 self._refresh_local_macro_list()
-                # No success message - just update the list silently
+                messagebox.showinfo("Success", f"Local macro '{name}' created.")
             else:
-                messagebox.showerror("Error", f"Failed to update local macro '{name}'")
-    
+                messagebox.showerror("Error", f"Failed to create local macro. Name may already exist.")
+
     def _on_delete_local_macro(self):
         """Delete the selected local macro."""
         if not self.selected_local_macro:
             return
-        
-        result = messagebox.askyesno(
-            "Confirm Delete", 
-            f"Are you sure you want to delete local macro '{self.selected_local_macro.name}'?"
-        )
-        
-        if result:
+        if messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete '{self.selected_local_macro.name}'?"):
             if self.local_macro_manager.delete_local_macro(self.selected_local_macro.name):
                 self._refresh_local_macro_list()
-                messagebox.showinfo("Success", f"Local macro '{self.selected_local_macro.name}' deleted.")
+                self.selected_local_macro = None
+                self._update_local_button_states()
+                # Optionally clear the editor
+                main_window = self._get_main_window()
+                if main_window and main_window.code_editor:
+                    main_window.code_editor.text_widget.delete('1.0', tk.END)
+                    main_window.code_editor.clear_modified_flag()
             else:
-                messagebox.showerror("Error", f"Failed to delete local macro.")
-    
+                messagebox.showerror("Error", "Failed to delete local macro.")
+
     def _on_import_local_macro(self):
         """Import a local macro from G-code file."""
-        from tkinter import filedialog
-        
         file_path = filedialog.askopenfilename(
-            title="Import Local Macro from G-code File",
-            filetypes=[
-                ("G-code files", "*.nc *.gcode *.tap *.ngc *.gc"),
-                ("All files", "*.*")
-            ]
+            title="Import Local Macro",
+            filetypes=[("G-code files", "*.nc *.gcode *.tap"), ("All files", "*.*")]
         )
-        
         if file_path:
-            name = simpledialog.askstring("Import Local Macro", "Enter local macro name:")
+            name = simpledialog.askstring("Import Macro", "Enter macro name:", parent=self)
             if name:
-                description = simpledialog.askstring("Import Local Macro", "Enter description (optional):") or ""
-                
+                description = simpledialog.askstring("Import Macro", "Enter description (optional):", parent=self) or ""
                 if self.local_macro_manager.import_local_macro_from_file(name, file_path, description):
                     self._refresh_local_macro_list()
-                    messagebox.showinfo("Success", f"Local macro '{name}' imported successfully!")
+                    messagebox.showinfo("Success", f"Macro '{name}' imported.")
                 else:
-                    messagebox.showerror("Error", f"Failed to import local macro from file.")
-    
+                    messagebox.showerror("Error", "Failed to import macro.")
+
     def _on_export_local_macro(self):
         """Export the selected local macro to G-code file."""
         if not self.selected_local_macro:
             return
-        
-        from tkinter import filedialog
-        
         file_path = filedialog.asksaveasfilename(
-            title="Export Local Macro to G-code File",
+            title="Export Local Macro",
             defaultextension=".gcode",
-            filetypes=[
-                ("G-code files", "*.gcode *.nc *.tap *.cnc *.ngc *.gc"),
-                ("All files", "*.*")
-            ]
+            initialfile=f"{self.selected_local_macro.name}.gcode",
+            filetypes=[("G-code files", "*.gcode"), ("All files", "*.*")]
         )
-        
         if file_path:
             if self.local_macro_manager.export_local_macro(self.selected_local_macro.name, file_path):
-                messagebox.showinfo("Success", f"Local macro exported to '{file_path}'!")
+                messagebox.showinfo("Success", f"Macro exported to '{os.path.basename(file_path)}'.")
             else:
-                messagebox.showerror("Error", f"Failed to export local macro.")
+                messagebox.showerror("Error", "Failed to export macro.")
+
     def _on_view_local_macro_in_editor(self, event=None):
         """View the selected local macro in the code editor."""
         # If no macro is selected, try to get the current selection

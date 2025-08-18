@@ -80,8 +80,7 @@ class LocalMacroManager:
             local_macro.category = category
         
         local_macro.modified_date = datetime.now().isoformat()
-        self.save_local_macros()
-        return True
+        return self.save_local_macros()
     
     def delete_local_macro(self, name: str) -> bool:
         """Delete a local macro."""
