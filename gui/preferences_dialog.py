@@ -49,7 +49,7 @@ class PreferencesDialog:
             'editor.font_size': tk.IntVar(value=self.config.get('editor.font_size', 12)),
             'editor.tab_size': tk.IntVar(value=self.config.get('editor.tab_size', 4)),
             'editor.show_line_numbers': tk.BooleanVar(value=self.config.get('editor.show_line_numbers', True)),
-            'connection.host': tk.StringVar(value=self.config.get('connection.host', 'bbctrl.polymicro.net')),
+            'connection.host': tk.StringVar(value=self.config.get('connection.host', '10.1.1.111')),
             'connection.port': tk.IntVar(value=self.config.get('connection.port', 80)),
             'general.theme': tk.StringVar(value=self.config.get('general.theme', 'light')),
         }
