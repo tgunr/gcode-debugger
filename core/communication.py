@@ -34,6 +34,7 @@ class BBCtrlCommunicator:
         # Connection settings
         self.host = host if host is not None else config.get('connection.host')
         self.port = port if port is not None else config.get('connection.port')
+        self.password = config.get('connection.password', "")
 
         # Determine scheme based on port
         if self.port == 443:
@@ -1082,6 +1083,23 @@ class BBCtrlCommunicator:
             print(f"[ERROR] {error_message}")
             self._call_callback(self.error_callback, error_message)
             return False, error_message
+
+    def login_with_password(self, password: str) -> bool:
+        response = requests.put(f'{self.base_url}/api/auth/login', timeout=5,
+            headers={
+            "Content-Type": "application/json"
+            },
+            json={
+            "password": + self.password
+            }
+        )
+        if response.status_code == 200:
+            return TRUE
+
+        elif response.status_code == 404:
+            print("ERROR: login failed")
+            return FALSE
+
 
 class CommunicationError(Exception):
     """Custom exception for communication errors."""

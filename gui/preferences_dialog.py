@@ -197,11 +197,21 @@ class PreferencesDialog:
             width=8
         ).grid(row=row, column=1, sticky=tk.W, pady=2, padx=5)
         row += 1
-        
+
+        # Password
+        ttk.Label(frame, text="Password:").grid(row=row, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(
+            frame,
+            textvariable=self.values['connection.password'],
+            show='*',
+            width=25
+        ).grid(row=row, column=1, sticky=tk.W, pady=2, padx=5)
+        row += 1
+
         # Add padding to all children
         for child in frame.winfo_children():
             child.grid_configure(padx=5, pady=2)
-    
+
     def _add_paths_tab(self, notebook):
         """Add the Paths preferences tab."""
         frame = ttk.Frame(notebook, padding=10)

@@ -781,7 +781,16 @@ class MainWindow:
                 self.connection_status.set("Connected")
                 self._log_message("Connected to controller")
                 self._start_position_updates()
-                return True
+
+                password = self.config.get('connection.password')
+                if password:
+                    try:
+                        if self.communicator.login_with_password(password):
+                            self._log_message("Logged in to controller", "green")
+                            return True
+                        else:
+                            self._log_message("Login failed", "red")
+                            return False
             else:
                 self.connection_status.set("Not Connected")
                 self._log_message("Failed to connect to controller", "red")
