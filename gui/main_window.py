@@ -773,33 +773,36 @@ class MainWindow:
             state.get('yp', 0),
             state.get('zp', 0)
         )
-    
-    def connect_to_controller(self):
-        """Connect to the controller."""
-        try:
-            if self.communicator.connect_websocket():
-                self.connection_status.set("Connected")
-                self._log_message("Connected to controller")
-                self._start_position_updates()
 
-                password = self.config.get('connection.password')
-                if password:
-                    try:
-                        if self.communicator.login_with_password(password):
-                            self._log_message("Logged in to controller", "green")
-                            return True
-                        else:
-                            self._log_message("Login failed", "red")
+    def connect_to_controller(self):
+            """Connect to the controller."""
+            try:
+                if self.communicator.connect_websocket():
+                    self.connection_status.set("Connected")
+                    self._log_message("Connected to controller")
+                    self._start_position_updates()
+
+                    password = self.config.get('connection.password')
+                    if password:
+                        try:
+                            if self.communicator.login_with_password(password):
+                                self._log_message("Logged in to controller", "green")
+                                return True
+                            else:
+                                self._log_message("Login failed", "red")
+                                return False
+                        except Exception as e:
+                            self._log_message(f"Login error: {e}", "red")
                             return False
-            else:
+                else:
+                    self.connection_status.set("Not Connected")
+                    self._log_message("Failed to connect to controller", "red")
+                    return False
+            except Exception as e:
                 self.connection_status.set("Not Connected")
-                self._log_message("Failed to connect to controller", "red")
+                self._log_message(f"Connection error: {e}", "red")
                 return False
-        except Exception as e:
-            self.connection_status.set("Not Connected")
-            self._log_message(f"Connection error: {e}", "red")
-            return False
-    
+
     def disconnect_from_controller(self):
         """Disconnect from the controller."""
         try:

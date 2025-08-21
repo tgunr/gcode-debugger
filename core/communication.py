@@ -1090,15 +1090,15 @@ class BBCtrlCommunicator:
             "Content-Type": "application/json"
             },
             json={
-            "password": + self.password
+            "password": password
             }
         )
         if response.status_code == 200:
-            return TRUE
+            return True
 
         elif response.status_code == 404:
             print("ERROR: login failed")
-            return FALSE
+            return False
 
 
 class CommunicationError(Exception):
