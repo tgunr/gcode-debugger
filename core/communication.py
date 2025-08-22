@@ -36,6 +36,9 @@ class BBCtrlCommunicator:
         self.port = port if port is not None else config.get('connection.port')
         self.password = config.get('connection.password', "")
 
+        # Initialize session for persistent authentication
+        self.session = requests.Session()
+
         # Determine scheme based on port
         if self.port == 443:
             http_scheme = 'https'
@@ -328,7 +331,7 @@ class BBCtrlCommunicator:
             url = f"{self.base_url}/api/state"
             print(f"[DEBUG] Requesting state from {url}")
 
-            response = requests.get(url, timeout=5)
+            response = self.session.get(url, timeout=5)
             response.raise_for_status()
 
             state = response.json()
@@ -758,7 +761,7 @@ class BBCtrlCommunicator:
             print(f"DEBUG: Sending GET request to {url}")
 
             start_time = time.time()
-            response = requests.get(url, headers=headers, timeout=10)
+            response = self.session.get(url, headers=headers, timeout=10)
             elapsed = time.time() - start_time
 
             print(f"DEBUG: Response received in {elapsed:.2f} seconds")
@@ -986,7 +989,7 @@ class BBCtrlCommunicator:
             url = f'{self.base_url}/api/fs/{encoded_path}'
             print(f"DEBUG: Reading file: {url}")
 
-            response = requests.get(url, timeout=10)
+            response = self.session.get(url, timeout=10)
 
             if response.status_code == 200:
                 return response.text
@@ -1042,16 +1045,93 @@ class BBCtrlCommunicator:
             print(f"[ERROR] {error_msg}")
             return False, error_msg
 
+        # Check if we have valid authentication first
+        print(f"[DEBUG] Session cookies: {dict(self.session.cookies)}")
+        if not self.session.cookies:
+            error_msg = "No authentication cookies found. Login may be required for file writes."
+            print(f"[WARNING] {error_msg}")
+            return False, error_msg
+
         try:
-            # Ensure the path is correctly formatted (no leading slash for API)
+            from urllib.parse import quote
+            import os
+
+            print(f"[DEBUG] Original file_path: '{file_path}'")
+            print(f"[DEBUG] file_path type: {type(file_path)}")
+            print(f"[DEBUG] file_path repr: {repr(file_path)}")
+
+            # Ensure the path is correctly formatted for Buildbotics API
+            # The API expects paths without leading slash but needs proper encoding
             if file_path.startswith('/'):
                 file_path = file_path[1:]
+                print(f"[DEBUG] After removing leading slash: '{file_path}'")
 
-            url = f"{self.base_url}/api/fs/{file_path}"
+            # Ensure we have a valid non-empty path
+            if not file_path.strip():
+                error_msg = f"File path cannot be empty. Original: {repr(file_path)}"
+                print(f"[ERROR] {error_msg}")
+                return False, error_msg
+
+            print(f"[DEBUG] Final file_path before encoding: '{file_path}'")
+            encoded_path = quote(file_path, safe='/')
+            print(f"[DEBUG] Encoded path: '{encoded_path}'")
+            url = f"{self.base_url}/api/fs/{encoded_path}"
+
+            # Use simple text/plain Content-Type like successful read operations expect
             headers = {'Content-Type': 'text/plain'}
 
-            print(f"[DEBUG] Writing to {url}")
-            response = requests.put(url, data=content.encode('utf-8'), headers=headers, timeout=10)
+            print(f"[DEBUG] Final URL: {url}")
+            print(f"[DEBUG] Headers: {headers}")
+            print(f"[DEBUG] Content length: {len(content)} bytes")
+            print(f"[DEBUG] Content preview: {content[:100]}...")
+
+            # Add API headers to ensure proper API handling
+            api_headers = {
+                'Content-Type': 'text/plain',
+                'Accept': 'application/json',
+                'User-Agent': 'GCodeDebugger/1.0',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+
+            # Check if we have authentication cookies
+            if self.session.cookies:
+                print(f"[DEBUG] Using authenticated session with cookies: {list(self.session.cookies.keys())}")
+            else:
+                print(f"[WARNING] No authentication cookies found")
+
+            # Try raw file content as body (most common for REST APIs)
+            response = self.session.put(url, data=content.encode('utf-8'), headers=api_headers, timeout=10)
+            print(f"[DEBUG] Used raw data upload with API headers")
+
+            print(f"[DEBUG] Response status code: {response.status_code}")
+            print(f"[DEBUG] Response headers: {dict(response.headers)}")
+            print(f"[DEBUG] Response content: {response.text[:200]}...")
+
+            # Check if we got HTML response, if so the API might be rejecting unauthenticated requests
+            if response.status_code == 200 and 'text/html' in response.headers.get('content-type', ''):
+                print(f"[WARNING] Got HTML response - likely authentication required or wrong endpoint")
+
+                # Force re-authentication and try again
+                password = self.password or self.config.get('connection.password')
+                if password:
+                    print(f"[DEBUG] Attempting re-authentication...")
+                    if self.login_with_password(password):
+                        print(f"[DEBUG] Re-authentication successful, retrying file write...")
+                        response = self.session.put(url, data=content.encode('utf-8'), headers=api_headers, timeout=10)
+                        print(f"[DEBUG] Retry response status: {response.status_code}")
+                        print(f"[DEBUG] Retry response headers: {dict(response.headers)}")
+
+                        if response.status_code == 200 and 'text/html' not in response.headers.get('content-type', ''):
+                            print(f"[DEBUG] Success after re-authentication!")
+                        else:
+                            print(f"[WARNING] Still getting HTML response after authentication")
+                            return self.write_file_alternative(file_path, content)
+                    else:
+                        print(f"[ERROR] Re-authentication failed")
+                        return False, "Authentication required for file writes"
+                else:
+                    print(f"[ERROR] No password configured for authentication")
+                    return False, "Password required for file writes"
 
             response.raise_for_status()  # Raise an exception for bad status codes
 
@@ -1085,7 +1165,7 @@ class BBCtrlCommunicator:
             return False, error_message
 
     def login_with_password(self, password: str) -> bool:
-        response = requests.put(f'{self.base_url}/api/auth/login', timeout=5,
+        response = self.session.put(f'{self.base_url}/api/auth/login', timeout=5,
             headers={
             "Content-Type": "application/json"
             },
@@ -1093,12 +1173,101 @@ class BBCtrlCommunicator:
             "password": password
             }
         )
-        if response.status_code == 200:
-            return True
+        print(f"[DEBUG] Login response status: {response.status_code}")
+        print(f"[DEBUG] Login response headers: {dict(response.headers)}")
+        print(f"[DEBUG] Login response content: {response.text[:200]}")
 
-        elif response.status_code == 404:
-            print("ERROR: login failed")
+        if response.status_code == 200:
+            print(f"DEBUG: Login successful. Session cookies: {dict(self.session.cookies)}")
+            # Store authentication state for future requests
+            return True
+        elif response.status_code == 401:
+            print("ERROR: login failed - invalid credentials")
             return False
+        elif response.status_code == 404:
+            print("ERROR: login endpoint not found - controller may not require authentication")
+            return False
+        else:
+            print(f"ERROR: login failed with status {response.status_code}: {response.text}")
+            return False
+
+    def write_file_alternative(self, file_path: str, content: str) -> tuple[bool, str]:
+        """Alternative write method for testing different API endpoints."""
+        if not self.connected:
+            error_msg = "Not connected, cannot write file."
+            print(f"[ERROR] {error_msg}")
+            return False, error_msg
+
+        try:
+            from urllib.parse import quote
+            import os
+
+            # Ensure the path is correctly formatted for Buildbotics API
+            if file_path.startswith('/'):
+                file_path = file_path[1:]
+
+            # Ensure we have a valid non-empty path for alternative methods too
+            if not file_path.strip():
+                return False, "File path cannot be empty"
+
+            encoded_path = quote(file_path, safe='/')
+
+            print(f"[DEBUG] Alternative write method testing different API endpoints")
+
+            # Try endpoint 1: /api/fs/{path} with PATCH method
+            url1 = f"{self.base_url}/api/fs/{encoded_path}"
+            response1 = self.session.patch(url1, data=content.encode('utf-8'),
+                                         headers={'Content-Type': 'text/plain'}, timeout=10)
+            print(f"[DEBUG] Endpoint 1 (PATCH): Status {response1.status_code}, Headers: {dict(response1.headers)}")
+            print(f"[DEBUG] Response: {response1.text[:100]}")
+
+            if response1.status_code == 200 and 'text/html' not in response1.headers.get('content-type', ''):
+                return True, f"Successfully wrote to {file_path} using PATCH method"
+
+            # Try endpoint 2: /api/fs/{path} with POST
+            url2 = f"{self.base_url}/api/fs/{encoded_path}"
+            response2 = self.session.post(url2, data=content.encode('utf-8'),
+                                        headers={'Content-Type': 'text/plain'}, timeout=10)
+            print(f"[DEBUG] Endpoint 2 (POST): Status {response2.status_code}, Headers: {dict(response2.headers)}")
+            print(f"[DEBUG] Response: {response2.text[:100]}")
+
+            if response2.status_code == 200 and 'text/html' not in response2.headers.get('content-type', ''):
+                return True, f"Successfully wrote to {file_path} using POST method"
+
+            # Try endpoint 3: Form-encoded data with PUT
+            url3 = f"{self.base_url}/api/fs/{encoded_path}"
+            form_data = {'content': content, 'filename': os.path.basename(file_path)}
+            response3 = self.session.put(url3, data=form_data, timeout=10)
+            print(f"[DEBUG] Endpoint 3 (form data): Status {response3.status_code}, Headers: {dict(response3.headers)}")
+            print(f"[DEBUG] Response: {response3.text[:100]}")
+
+            if response3.status_code == 200 and 'text/html' not in response3.headers.get('content-type', ''):
+                return True, f"Successfully wrote to {file_path} using form data"
+
+            # Try endpoint 4: Check if OPTIONS reveals supported methods
+            url4 = f"{self.base_url}/api/fs/{encoded_path}"
+            response4 = self.session.options(url4, timeout=10)
+            print(f"[DEBUG] Endpoint 4 (OPTIONS): Status {response4.status_code}, Headers: {dict(response4.headers)}")
+            print(f"[DEBUG] Response: {response4.text[:100]}")
+            allowed_methods = response4.headers.get('Allow', 'Not specified')
+            print(f"[DEBUG] Allowed methods: {allowed_methods}")
+
+            # Try endpoint 5: Check if /api/fs supports different operations
+            url5 = f"{self.base_url}/api/fs"
+            file_data = {'path': file_path, 'content': content}
+            response5 = self.session.post(url5, json=file_data, timeout=10)
+            print(f"[DEBUG] Endpoint 5 (JSON POST to /api/fs): Status {response5.status_code}, Headers: {dict(response5.headers)}")
+            print(f"[DEBUG] Response: {response5.text[:100]}")
+
+            if response5.status_code == 200 and 'text/html' not in response5.headers.get('content-type', ''):
+                return True, f"Successfully wrote to {file_path} using JSON API"
+
+            return False, f"All methods failed. Controller may have read-only filesystem. Allowed methods: {allowed_methods}"
+
+        except Exception as e:
+            error_message = f"Error in alternative write method: {e}"
+            print(f"[ERROR] {error_message}")
+            return False, error_message
 
 
 class CommunicationError(Exception):

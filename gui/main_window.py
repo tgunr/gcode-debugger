@@ -99,6 +99,7 @@ class MainWindow:
         # State variables
         self.current_file_path = ""
         self.connection_status = tk.StringVar()
+        self.is_logged_in = False
         # Initialize after widgets are created
         # (default text+color will be set in _set_connection_status)
 
@@ -610,7 +611,7 @@ class MainWindow:
     def _attempt_connection(self):
         """Attempt to connect to the controller on startup."""
         self._log_message("Attempting to connect to controller...", "yellow")
-        self.communicator.connect_websocket()
+        self.connect_to_controller()
 
     # File operations
     def open_file(self):
@@ -727,13 +728,17 @@ class MainWindow:
     def _attempt_connection(self):
         """Attempt to connect to the controller on startup."""
         self._log_message("Attempting to connect to controller...", "yellow")
-        self.communicator.connect_websocket()
+        self.connect_to_controller()
 
     def _on_connection_status_change(self, *args):
         """Update label color based on current connection status."""
         status = self.connection_status.get().lower()
         if status == "connected":
-            self.connection_status_label.configure(foreground="#00cc00")  # bright green
+            logged_in = self.is_logged_in
+            if logged_in:
+                self.connection_status_label.configure(foreground="#00cc00")  # bright green
+            else:
+                self.connection_status_label.configure(foreground="#0000cc")  # bright blue
         else:
             self.connection_status_label.configure(foreground="#ff0000")  # bright red
 
@@ -787,20 +792,25 @@ class MainWindow:
                         try:
                             if self.communicator.login_with_password(password):
                                 self._log_message("Logged in to controller", "green")
+                                self.is_logged_in = True
                                 return True
                             else:
                                 self._log_message("Login failed", "red")
+                                self.is_logged_in = False
                                 return False
                         except Exception as e:
                             self._log_message(f"Login error: {e}", "red")
+                            self.is_logged_in = False
                             return False
                 else:
                     self.connection_status.set("Not Connected")
                     self._log_message("Failed to connect to controller", "red")
+                    self.is_logged_in = False
                     return False
             except Exception as e:
                 self.connection_status.set("Not Connected")
                 self._log_message(f"Connection error: {e}", "red")
+                self.is_logged_in = False
                 return False
 
     def disconnect_from_controller(self):
@@ -808,6 +818,7 @@ class MainWindow:
         try:
             self.communicator.close()
             self.connection_status.set("Not Connected")
+            self.is_logged_in = False
             self._log_message("Disconnected from controller")
             return True
         except Exception as e:
@@ -1217,9 +1228,10 @@ Built for Buildbotics LLC
         # Cleanup
         if self.communicator:
             self.communicator.close()
+        self.root.destroy()
 
         self.root.quit()
-        self.root.destroy()
+
 
 
 if __name__ == "__main__":

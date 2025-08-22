@@ -1,0 +1,515 @@
+{
+  "qdrant": {
+    "url": "https://8f4713f0-ee2f-4bee-a919-cb945f0905fb.us-east4-0.gcp.cloud.qdrant.io",
+    "api_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.4U4Y6eytfI3JLrK-HXVhQALavTXv3LwIYWQK-efb_Qo",
+    "default_vector_size": 384,
+    "default_distance_metric": "cosine",
+    "connection_timeout": 30,
+    "max_retries": 3
+  },
+  "collection_templates": {
+    "small_codebase": {
+      "description": "Optimized for codebases under 10K files",
+      "vector_size": 384,
+      "distance_metric": "cosine",
+      "enable_quantization": false,
+      "enable_sparse_vectors": true,
+      "replication_factor": 1,
+      "shard_number": null,
+      "hnsw_config": {
+        "m": 16,
+        "ef_construct": 100,
+        "full_scan_threshold": 10000,
+        "max_indexing_threads": 0,
+        "on_disk": false
+      },
+      "optimizers_config": {
+        "deleted_threshold": 0.2,
+        "vacuum_min_vector_number": 1000,
+        "default_segment_number": 0,
+        "indexing_threshold": 20000,
+        "flush_interval_sec": 5
+      }
+    },
+    "medium_codebase": {
+      "description": "Optimized for codebases 10K-100K files",
+      "vector_size": 384,
+      "distance_metric": "cosine",
+      "enable_quantization": true,
+      "quantization_type": "scalar",
+      "enable_sparse_vectors": true,
+      "replication_factor": 1,
+      "shard_number": 2,
+      "hnsw_config": {
+        "m": 16,
+        "ef_construct": 200,
+        "full_scan_threshold": 20000,
+        "max_indexing_threads": 0,
+        "on_disk": false
+      },
+      "optimizers_config": {
+        "deleted_threshold": 0.15,
+        "vacuum_min_vector_number": 5000,
+        "default_segment_number": 2,
+        "indexing_threshold": 50000,
+        "flush_interval_sec": 10
+      }
+    },
+    "large_codebase": {
+      "description": "Optimized for codebases over 100K files",
+      "vector_size": 768,
+      "distance_metric": "cosine",
+      "enable_quantization": true,
+      "quantization_type": "product",
+      "enable_sparse_vectors": true,
+      "replication_factor": 2,
+      "shard_number": 4,
+      "hnsw_config": {
+        "m": 32,
+        "ef_construct": 400,
+        "full_scan_threshold": 50000,
+        "max_indexing_threads": 0,
+        "on_disk": true
+      },
+      "optimizers_config": {
+        "deleted_threshold": 0.1,
+        "vacuum_min_vector_number": 10000,
+        "default_segment_number": 4,
+        "indexing_threshold": 100000,
+        "flush_interval_sec": 15
+      }
+    },
+    "high_performance": {
+      "description": "Maximum performance for production environments",
+      "vector_size": 384,
+      "distance_metric": "cosine",
+      "enable_quantization": true,
+      "quantization_type": "scalar",
+      "enable_sparse_vectors": true,
+      "replication_factor": 3,
+      "shard_number": 6,
+      "write_consistency_factor": 2,
+      "hnsw_config": {
+        "m": 24,
+        "ef_construct": 300,
+        "full_scan_threshold": 30000,
+        "max_indexing_threads": 0,
+        "on_disk": false
+      },
+      "optimizers_config": {
+        "deleted_threshold": 0.05,
+        "vacuum_min_vector_number": 20000,
+        "default_segment_number": 6,
+        "indexing_threshold": 200000,
+        "flush_interval_sec": 30,
+        "max_optimization_threads": 4
+      },
+      "wal_config": {
+        "wal_capacity_mb": 64,
+        "wal_segments_ahead": 2
+      }
+    }
+  },
+  "indexing": {
+    "chunking": {
+      "max_chunk_size": 1000,
+      "overlap_size": 100,
+      "smart_chunking": true,
+      "preserve_structure": true,
+      "min_chunk_size": 50
+    },
+    "file_processing": {
+      "max_file_size_mb": 10,
+      "encoding": "utf-8",
+      "encoding_fallback": "iso-8859-1",
+      "skip_binary": true,
+      "skip_empty": true
+    },
+    "language_support": {
+      "python": {
+        "extensions": [".py", ".pyx", ".pyi"],
+        "complexity_weight": 1.0,
+        "structure_patterns": {
+          "function": "^\\s*def\\s+(\\w+)\\s*\\(",
+          "class": "^\\s*class\\s+(\\w+)\\s*[:\\(]",
+          "import": "^\\s*(?:from\\s+\\S+\\s+)?import\\s+(.+)",
+          "decorator": "^\\s*@\\w+"
+        }
+      },
+      "javascript": {
+        "extensions": [".js", ".jsx", ".mjs", ".cjs"],
+        "complexity_weight": 1.1,
+        "structure_patterns": {
+          "function": "^\\s*(?:function\\s+(\\w+)|const\\s+(\\w+)\\s*=\\s*(?:\\([^)]*\\)\\s*=>|function))",
+          "class": "^\\s*class\\s+(\\w+)",
+          "import": "^\\s*import\\s+.+\\s+from\\s+[\"'](.+)[\"']",
+          "export": "^\\s*export\\s+"
+        }
+      },
+      "typescript": {
+        "extensions": [".ts", ".tsx", ".d.ts"],
+        "complexity_weight": 1.2,
+        "structure_patterns": {
+          "function": "^\\s*(?:function\\s+(\\w+)|const\\s+(\\w+)\\s*=\\s*(?:\\([^)]*\\)\\s*=>|function))",
+          "class": "^\\s*(?:export\\s+)?class\\s+(\\w+)",
+          "interface": "^\\s*(?:export\\s+)?interface\\s+(\\w+)",
+          "type": "^\\s*(?:export\\s+)?type\\s+(\\w+)",
+          "import": "^\\s*import\\s+.+\\s+from\\s+[\"'](.+)[\"']"
+        }
+      },
+      "java": {
+        "extensions": [".java"],
+        "complexity_weight": 1.3,
+        "structure_patterns": {
+          "class": "^\\s*(?:public\\s+)?class\\s+(\\w+)",
+          "interface": "^\\s*(?:public\\s+)?interface\\s+(\\w+)",
+          "method": "^\\s*(?:public|private|protected)?\\s*(?:static\\s+)?(?:\\w+\\s+)+(\\w+)\\s*\\(",
+          "import": "^\\s*import\\s+(.+);"
+        }
+      },
+      "cpp": {
+        "extensions": [".cpp", ".cxx", ".cc", ".c++", ".hpp", ".hxx", ".h++"],
+        "complexity_weight": 1.5,
+        "structure_patterns": {
+          "function": "^\\s*(?:\\w+\\s+)*?(\\w+)\\s*\\([^)]*\\)\\s*{",
+          "class": "^\\s*class\\s+(\\w+)",
+          "struct": "^\\s*struct\\s+(\\w+)",
+          "include": "^\\s*#include\\s+[<\"](.+)[>\"]"
+        }
+      },
+      "go": {
+        "extensions": [".go"],
+        "complexity_weight": 1.2,
+        "structure_patterns": {
+          "function": "^\\s*func\\s+(?:\\(\\w+\\s+\\*?\\w+\\)\\s+)?(\\w+)\\s*\\(",
+          "type": "^\\s*type\\s+(\\w+)\\s+",
+          "import": "^\\s*import\\s+\"(.+)\""
+        }
+      },
+      "rust": {
+        "extensions": [".rs"],
+        "complexity_weight": 1.4,
+        "structure_patterns": {
+          "function": "^\\s*fn\\s+(\\w+)\\s*\\(",
+          "struct": "^\\s*struct\\s+(\\w+)",
+          "enum": "^\\s*enum\\s+(\\w+)",
+          "impl": "^\\s*impl\\s+",
+          "use": "^\\s*use\\s+(.+);"
+        }
+      }
+    },
+    "supported_extensions": [
+      ".py",
+      ".js",
+      ".ts",
+      ".jsx",
+      ".tsx",
+      ".java",
+      ".cpp",
+      ".c",
+      ".h",
+      ".cs",
+      ".php",
+      ".rb",
+      ".go",
+      ".rs",
+      ".swift",
+      ".kt",
+      ".scala",
+      ".sql",
+      ".html",
+      ".css",
+      ".scss",
+      ".less",
+      ".xml",
+      ".json",
+      ".yaml",
+      ".yml",
+      ".toml",
+      ".ini",
+      ".cfg",
+      ".conf",
+      ".md",
+      ".rst",
+      ".txt",
+      ".sh",
+      ".bat",
+      ".ps1",
+      ".dockerfile",
+      ".makefile",
+      ".gradle",
+      ".pom",
+      ".sbt",
+      ".cabal",
+      ".elm",
+      ".ex",
+      ".exs",
+      ".erl",
+      ".hrl",
+      ".clj",
+      ".cljs",
+      ".cljc",
+      ".hs",
+      ".lhs",
+      ".ml",
+      ".mli",
+      ".fs",
+      ".fsi"
+    ],
+    "exclude_patterns": [
+      ".git",
+      ".svn",
+      ".hg",
+      ".bzr",
+      "__pycache__",
+      ".pytest_cache",
+      ".mypy_cache",
+      ".tox",
+      "node_modules",
+      "bower_components",
+      "jspm_packages",
+      ".vscode",
+      ".idea",
+      ".vs",
+      ".venv",
+      "venv",
+      "env",
+      "build",
+      "dist",
+      "target",
+      "out",
+      "bin",
+      "obj",
+      ".DS_Store",
+      "Thumbs.db",
+      ".cache",
+      ".tmp",
+      "temp",
+      "logs",
+      "*.log",
+      "*.tmp",
+      "*.bak",
+      "*.swp",
+      "*.swo",
+      "coverage",
+      "htmlcov",
+      ".coverage",
+      ".nyc_output",
+      "*.egg-info",
+      "*.whl",
+      "*.pyc",
+      "*.pyo",
+      "*.class",
+      ".next",
+      ".nuxt",
+      ".output",
+      "vendor"
+    ],
+    "include_dotfiles": [
+      ".gitignore",
+      ".gitattributes",
+      ".gitmodules",
+      ".dockerignore",
+      ".env.example",
+      ".env.template",
+      ".editorconfig",
+      ".prettierrc",
+      ".eslintrc",
+      ".babelrc",
+      ".nvmrc",
+      ".ruby-version",
+      ".python-version"
+    ]
+  },
+  "collections": {
+    "bbctrl-firmware": {
+      "name": "bbctrl-firmware-enhanced",
+      "description": "Buildbotics CNC Controller Firmware - Enhanced indexing with deep analysis",
+      "path": "/Volumes/Work/Buildbotics/bbctrl-firmware",
+      "template": "medium_codebase",
+      "custom_config": {
+        "focus_areas": [
+          "firmware",
+          "cnc",
+          "control",
+          "embedded",
+          "python",
+          "javascript"
+        ],
+        "priority_directories": ["src", "scripts", "Tools"],
+        "complexity_threshold": 25.0,
+        "max_files": null
+      }
+    },
+    "gcode-debugger": {
+      "name": "gcode-debugger-enhanced",
+      "description": "G-code Debugger Application - Enhanced indexing with GUI and parsing analysis",
+      "path": "/Volumes/Work/Buildbotics/gcode-debugger",
+      "template": "small_codebase",
+      "custom_config": {
+        "focus_areas": [
+          "gcode",
+          "debugging",
+          "gui",
+          "parser",
+          "python",
+          "tkinter"
+        ],
+        "priority_directories": ["core", "gui", "tests"],
+        "complexity_threshold": 15.0,
+        "max_files": null
+      }
+    },
+    "buildbotics-combined": {
+      "name": "buildbotics-ecosystem",
+      "description": "Complete Buildbotics ecosystem - firmware, debugger, and tools",
+      "paths": [
+        "/Volumes/Work/Buildbotics/bbctrl-firmware",
+        "/Volumes/Work/Buildbotics/gcode-debugger"
+      ],
+      "template": "large_codebase",
+      "custom_config": {
+        "focus_areas": [
+          "cnc",
+          "gcode",
+          "firmware",
+          "debugging",
+          "control",
+          "gui"
+        ],
+        "enable_cross_project_links": true,
+        "project_prefixes": {
+          "/Volumes/Work/Buildbotics/bbctrl-firmware": "firmware",
+          "/Volumes/Work/Buildbotics/gcode-debugger": "debugger"
+        },
+        "complexity_threshold": 20.0
+      }
+    }
+  },
+  "analysis": {
+    "complexity_calculation": {
+      "base_weight": 0.1,
+      "structure_weights": {
+        "function": 2.0,
+        "class": 3.0,
+        "method": 1.5,
+        "interface": 2.5,
+        "enum": 1.5,
+        "struct": 2.0
+      },
+      "keyword_weights": {
+        "if": 0.5,
+        "for": 0.8,
+        "while": 0.8,
+        "try": 1.0,
+        "catch": 1.0,
+        "switch": 1.2,
+        "async": 1.5,
+        "await": 1.0,
+        "lambda": 1.3,
+        "comprehension": 1.8
+      },
+      "nesting_multiplier": 1.2,
+      "cyclomatic_complexity": true
+    },
+    "importance_indicators": {
+      "high_priority": [
+        "TODO",
+        "FIXME",
+        "BUG",
+        "HACK",
+        "XXX",
+        "CRITICAL",
+        "URGENT"
+      ],
+      "medium_priority": ["NOTE", "WARNING", "IMPORTANT", "REVIEW", "OPTIMIZE"],
+      "low_priority": ["INFO", "DEBUG", "TRACE", "TEMP", "TEMP_FIX"],
+      "deprecated": ["DEPRECATED", "OBSOLETE", "LEGACY", "OLD"]
+    },
+    "file_importance": {
+      "high": {
+        "patterns": [
+          "main\\.",
+          "index\\.",
+          "app\\.",
+          "server\\.",
+          "__init__\\."
+        ],
+        "directories": ["src", "lib", "core", "main"],
+        "weight": 3.0
+      },
+      "medium": {
+        "patterns": [
+          "config",
+          "setup",
+          "install",
+          "build",
+          "deploy",
+          "utils",
+          "helpers"
+        ],
+        "directories": ["config", "scripts", "tools", "utils"],
+        "weight": 2.0
+      },
+      "low": {
+        "patterns": ["test", "spec", "example", "demo", "sample", "mock"],
+        "directories": ["test", "tests", "examples", "demos", "samples"],
+        "weight": 1.0
+      }
+    },
+    "semantic_analysis": {
+      "extract_comments": true,
+      "extract_docstrings": true,
+      "extract_todos": true,
+      "analyze_dependencies": true,
+      "track_api_usage": true,
+      "identify_patterns": true
+    }
+  },
+  "output": {
+    "report_format": "json",
+    "include_previews": true,
+    "preview_length": 300,
+    "generate_statistics": true,
+    "save_metadata": true,
+    "create_embeddings_manifest": true,
+    "export_formats": ["json", "csv", "markdown"],
+    "compression": {
+      "enable": false,
+      "format": "gzip",
+      "level": 6
+    }
+  },
+  "performance": {
+    "parallel_processing": {
+      "enabled": true,
+      "max_workers": null,
+      "chunk_size": 100
+    },
+    "memory_management": {
+      "max_memory_mb": 2048,
+      "gc_frequency": 1000,
+      "streaming": true
+    },
+    "caching": {
+      "enabled": true,
+      "cache_dir": ".indexing_cache",
+      "ttl_hours": 24,
+      "max_cache_size_mb": 500
+    },
+    "batch_processing": {
+      "batch_size": 1000,
+      "flush_interval": 10000,
+      "max_retries": 3,
+      "retry_delay": 1.0
+    }
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "file": "indexing.log",
+    "max_size_mb": 100,
+    "backup_count": 5,
+    "console_output": true
+  }
+}
