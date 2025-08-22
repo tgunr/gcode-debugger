@@ -512,7 +512,7 @@ export const UserUtils = {
      * Validate email format.
      */
     isValidEmail(email) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
         return emailRegex.test(email);
     },
 
@@ -747,7 +747,7 @@ Examples:
 
     parser.add_argument(
         '--qdrant-url',
-        default='https://pve.local:6333',
+        default='http://localhost:6333',
         help='Qdrant server URL (default: https://pve.local:6333)'
     )
 
