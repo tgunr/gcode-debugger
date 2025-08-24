@@ -2,3 +2,4 @@ macros/
 */__pycache__/
 console
 Indexer/
+qdrant_storage/
