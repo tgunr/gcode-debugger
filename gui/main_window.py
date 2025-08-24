@@ -100,6 +100,9 @@ class MainWindow:
         self.current_file_path = ""
         self.connection_status = tk.StringVar()
         self.is_logged_in = False
+        # Heartbeat internal flags - initialize to avoid AttributeError when callbacks run early
+        self._heartbeat_enabled = False
+        self._heartbeat_loop_scheduled = False
         # Initialize after widgets are created
         # (default text+color will be set in _set_connection_status)
 
@@ -549,15 +552,18 @@ class MainWindow:
         # Initialize heart_icon attribute if not present
         if not hasattr(self, 'heart_icon'):
             self.heart_icon = self.macro_panel._load_icon('heart')
-        toggle_heartbeat_button = ttk.Button(
+        # Heartbeat toggle as checkbox
+        if not hasattr(self, 'heartbeat_var'):
+            self.heartbeat_var = tk.BooleanVar(value=False)
+        toggle_heartbeat_check = ttk.Checkbutton(
             console_frame,
             image=self.heart_icon,
+            variable=self.heartbeat_var,
             command=self.toggle_heartbeat,
             text="Heartbeat",
             compound='left'
         )
-        # Place the button using grid (console_frame uses grid internally)
-        toggle_heartbeat_button.grid(row=0, column=0, padx=5, pady=5, sticky='w')
+        toggle_heartbeat_check.grid(row=0, column=0, padx=5, pady=5, sticky='w')
 
         # Console scrolled text occupies remaining space (row 1)
         self.console = scrolledtext.ScrolledText(
@@ -584,6 +590,8 @@ class MainWindow:
 
             # Flip the flag
             self._heartbeat_enabled = not self._heartbeat_enabled
+            # Reflect state in the checkbox variable
+            self.heartbeat_var.set(self._heartbeat_enabled)
 
             if self._heartbeat_enabled:
                 self._log_message("Heartbeat enabled", "cyan")
@@ -611,6 +619,7 @@ class MainWindow:
             # Clear scheduled flag - will be set again if re-scheduled
             self._heartbeat_loop_scheduled = False
 
+            print(f"DEBUG: _heartbeat_enabled present? {hasattr(self, '_heartbeat_enabled')}, value={getattr(self, '_heartbeat_enabled', None)}")
             if not getattr(self, '_heartbeat_enabled', False):
                 return
 
@@ -621,19 +630,22 @@ class MainWindow:
                     if hasattr(self.communicator, 'send_heartbeat'):
                         try:
                             ok = self.communicator.send_heartbeat()
-                            self._log_message("Heartbeat sent", "cyan" if ok else "red")
+                            if self._heartbeat_enabled:
+                                self._log_message("Heartbeat sent", "cyan" if ok else "red")
                         except Exception as e:
                             self._log_message(f"Heartbeat send failed: {e}", "red")
                     else:
                         # Fallback probe: get_state() to keep connection alive
                         try:
                             _ = self.communicator.get_state()
-                            self._log_message("Heartbeat probe (get_state) executed", "cyan")
+                            if self._heartbeat_enabled:
+                                self._log_message("Heartbeat probe (get_state) executed", "cyan")
                         except Exception as e:
                             self._log_message(f"Heartbeat probe failed: {e}", "red")
                 else:
                     # No communicator available yet; just log tick
-                    self._log_message("Heartbeat tick (no communicator)", "cyan")
+                    if self._heartbeat_enabled:
+                        self._log_message("Heartbeat tick (no communicator)", "cyan")
             except Exception as e:
                 self._log_message(f"Heartbeat exception: {e}", "red")
 
@@ -1001,9 +1013,11 @@ class MainWindow:
                     return
 
                 # Handle machine state updates (original behavior)
+                print(f"DEBUG: entering _on_machine_state_changed; _heartbeat_enabled present? {hasattr(self, '_heartbeat_enabled')}, value={getattr(self, '_heartbeat_enabled', None)}")
                 if isinstance(state, dict):
                     state_str = state.get('xx', 'Unknown')  # 'xx' is the state key in the API
-                    self._log_message(f"Machine state: {state_str}", "blue")
+                    if self._heartbeat_enabled:
+                        self._log_message(f"Machine state: {state_str}", "blue")
 
                     # Update position display when state changes
                     if hasattr(self, '_update_position_display'):
@@ -1086,7 +1100,8 @@ class MainWindow:
                                 print(f"WARNING: Error processing tagged message: {e}")
                                 self._log_message(f"COMM: {msg_str}", color)
                         else:
-                            self._log_message(f"COMM: {msg_str}", color)
+                            if self._heartbeat_enabled:
+                                self._log_message(f"COMM: {msg_str}", color)
                     except Exception as e:
                         print(f"ERROR in message processing: {e}")
 

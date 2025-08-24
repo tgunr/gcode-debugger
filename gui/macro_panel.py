@@ -1357,7 +1357,9 @@ class MacroPanel(ttk.LabelFrame):
                 
                 # Execute the macro
                 main_window.execute_controller_macro(self.selected_macro.name)
-                
+                print('DEBUG: _on_execute_controller_macro selected_macro=%r, main_window.comm=%r, comm.connected=%r' % (self.selected_macro, getattr(main_window, 'comm', None), getattr(getattr(main_window, 'comm', None), 'connected', None)))
+
+
                 # Update button states after execution starts
                 self._update_controller_button_states()
                 
