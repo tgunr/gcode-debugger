@@ -1,7 +1,7 @@
 {
   "qdrant": {
-    "url": "https://8f4713f0-ee2f-4bee-a919-cb945f0905fb.us-east4-0.gcp.cloud.qdrant.io",
-    "api_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.4U4Y6eytfI3JLrK-HXVhQALavTXv3LwIYWQK-efb_Qo",
+    "url": "http://localhost:6333",
+    "api_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.LB_x2qCirzOsvCL9WvWFadKPRUPYg73kOW3KXkxb_is",
     "default_vector_size": 384,
     "default_distance_metric": "cosine",
     "connection_timeout": 30,

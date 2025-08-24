@@ -591,6 +591,16 @@
       "import_count": 3
     },
     {
+      "file_path": "qdrant_storage/raft_state.json",
+      "size_bytes": 355,
+      "language": "json",
+      "chunks": 1,
+      "complexity_score": 0.01,
+      "function_count": 0,
+      "class_count": 0,
+      "import_count": 0
+    },
+    {
       "file_path": ".vscode/launch.json",
       "size_bytes": 736,
       "language": "json",
@@ -641,8 +651,18 @@
       "import_count": 0
     },
     {
+      "file_path": "Indexer/SOLUTION_SUMMARY.md",
+      "size_bytes": 5174,
+      "language": "markdown",
+      "chunks": 5,
+      "complexity_score": 1.64,
+      "function_count": 0,
+      "class_count": 0,
+      "import_count": 0
+    },
+    {
       "file_path": "Indexer/indexing_config.json",
-      "size_bytes": 3414,
+      "size_bytes": 3361,
       "language": "json",
       "chunks": 4,
       "complexity_score": 1.57,
@@ -669,6 +689,16 @@
       "function_count": 14,
       "class_count": 7,
       "import_count": 16
+    },
+    {
+      "file_path": "Indexer/gcode-debugger-enhanced_memory_efficient_report.json",
+      "size_bytes": 557621,
+      "language": "json",
+      "chunks": 547,
+      "complexity_score": 5.0,
+      "function_count": 0,
+      "class_count": 0,
+      "import_count": 0
     },
     {
       "file_path": "Indexer/memory_efficient_index_report.json",
@@ -722,7 +752,7 @@
     },
     {
       "file_path": "Indexer/enhanced_indexing_config.json",
-      "size_bytes": 13498,
+      "size_bytes": 13445,
       "language": "json",
       "chunks": 14,
       "complexity_score": 5.0,
@@ -756,6 +786,16 @@
       "language": "text",
       "chunks": 1,
       "complexity_score": 0.27,
+      "function_count": 0,
+      "class_count": 0,
+      "import_count": 0
+    },
+    {
+      "file_path": "qdrant_storage/aliases/data.json",
+      "size_bytes": 2,
+      "language": "json",
+      "chunks": 1,
+      "complexity_score": 0.01,
       "function_count": 0,
       "class_count": 0,
       "import_count": 0
@@ -19959,46 +19999,6 @@
       "function_count": 31,
       "class_count": 2,
       "import_count": 6
-    },
-    {
-      "file_path": ".venv/lib/python3.13/site-packages/scipy/interpolate/tests/__init__.py",
-      "size_bytes": 0,
-      "language": "python",
-      "chunks": 1,
-      "complexity_score": 0.01,
-      "function_count": 0,
-      "class_count": 0,
-      "import_count": 0
-    },
-    {
-      "file_path": ".venv/lib/python3.13/site-packages/scipy/interpolate/tests/test_polyint.py",
-      "size_bytes": 37296,
-      "language": "python",
-      "chunks": 37,
-      "complexity_score": 8.4,
-      "function_count": 95,
-      "class_count": 7,
-      "import_count": 8
-    },
-    {
-      "file_path": ".venv/lib/python3.13/site-packages/scipy/interpolate/tests/test_ndgriddata.py",
-      "size_bytes": 11025,
-      "language": "python",
-      "chunks": 11,
-      "complexity_score": 5.49,
-      "function_count": 18,
-      "class_count": 3,
-      "import_count": 6
-    },
-    {
-      "file_path": ".venv/lib/python3.13/site-packages/scipy/interpolate/tests/test_rgi.py",
-      "size_bytes": 46278,
-      "language": "python",
-      "chunks": 46,
-      "complexity_score": 7.6,
-      "function_count": 75,
-      "class_count": 3,
-      "import_count": 11
     }
   ],
   "skipped_files": [],
@@ -20007,9 +20007,9 @@
   "statistics": {
     "by_language": {
       "text": 112,
-      "markdown": 15,
-      "python": 1841,
-      "json": 13,
+      "markdown": 16,
+      "python": 1837,
+      "json": 16,
       "shell": 6,
       "ini": 1,
       "powershell": 1,
@@ -20022,20 +20022,20 @@
     },
     "by_extension": {},
     "size_distribution": {
-      "small": 408,
-      "medium": 768,
-      "large": 824
+      "small": 409,
+      "medium": 769,
+      "large": 822
     },
     "complexity_distribution": {
-      "low": 801,
+      "low": 803,
       "medium": 468,
-      "high": 731
+      "high": 729
     },
-    "total_functions": 31077,
-    "total_classes": 5091,
-    "total_imports": 16523
+    "total_functions": 30889,
+    "total_classes": 5078,
+    "total_imports": 16498
   },
-  "indexing_timestamp": "2025-08-22T14:38:49.948682",
+  "indexing_timestamp": "2025-08-22T14:57:49.888971",
   "project_root": "/Volumes/Work/Buildbotics/gcode-debugger",
   "batch_size": 25,
   "max_file_size_mb": 5.0

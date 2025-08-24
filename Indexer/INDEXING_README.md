@@ -39,10 +39,10 @@ This indexing system provides:
    ```bash
    # Index bbctrl-firmware
    ./index_codebase.sh index-bbctrl
-   
+
    # Index gcode-debugger
    ./index_codebase.sh index-debugger
-   
+
    # Index custom directory
    ./index_codebase.sh index-custom /path/to/your/project
    ```
@@ -51,10 +51,10 @@ This indexing system provides:
    ```bash
    # List all collections
    ./index_codebase.sh list-collections
-   
+
    # Get collection info
    ./index_codebase.sh info my-collection
-   
+
    # Delete a collection
    ./index_codebase.sh delete old-collection
    ```
@@ -68,7 +68,7 @@ The main script `index_codebase.sh` provides a convenient interface:
 ```bash
 # Basic indexing commands
 ./index_codebase.sh index-bbctrl           # Index bbctrl-firmware
-./index_codebase.sh index-debugger         # Index gcode-debugger  
+./index_codebase.sh index-debugger         # Index gcode-debugger
 ./index_codebase.sh index-custom PATH      # Index custom directory
 
 # Collection management
@@ -117,7 +117,7 @@ The `indexing_config.json` file controls all aspects of the indexing process:
 ```json
 {
   "qdrant": {
-    "url": "https://pve.local:6333",
+    "url": "http://localhost:6333",
     "api_key": "your-jwt-token",
     "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
     "vector_size": 384
@@ -340,7 +340,7 @@ jq '.statistics.by_extension' index_report.json
 - name: Index Codebase
   run: |
     ./index_codebase.sh -n "build-${{ github.run_number }}" index-custom .
-    
+
 - name: Upload Report
   uses: actions/upload-artifact@v2
   with:
