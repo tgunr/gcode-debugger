@@ -512,17 +512,54 @@ class MainWindow:
         console_container = ttk.Frame(right_paned)
         right_paned.add(console_container, weight=1)  # Keep console at minimum height
 
-        # MDI panel (Manual Data Input) - now directly above console
+        # Diagnostic: print geometry managers of any existing children in console_container
+        try:
+            children = console_container.winfo_children()
+            if children:
+                print("DEBUG: console_container existing children and their geometry managers:")
+                for ch in children:
+                    try:
+                        print(f"  - {ch.winfo_class()} {ch.winfo_name()} manager={ch.winfo_manager()}")
+                    except Exception as _e:
+                        print(f"  - (child info error): {_e}")
+            else:
+                print("DEBUG: console_container has no existing children yet")
+        except Exception as _e:
+            print(f"DEBUG: Could not inspect console_container children: {_e}")
+
+        # Use grid inside console_container so we don't mix pack/grid in the same container
+        console_container.columnconfigure(0, weight=1)
+        console_container.rowconfigure(1, weight=1)
+
+        # MDI panel (Manual Data Input) - now directly above console (row 0)
         mdi_frame = ttk.LabelFrame(console_container, text="Manual Data Input (MDI)")
-        mdi_frame.pack(fill=tk.X, padx=5, pady=(5, 2))
+        mdi_frame.grid(row=0, column=0, sticky='ew', padx=5, pady=(5, 2))
 
         self.mdi_panel = QuickCommandEntry(mdi_frame)
+        # Packing inside mdi_frame is fine (separate container)
         self.mdi_panel.pack(fill=tk.X, padx=5, pady=5)
 
-        # Console output - now directly below MDI
+        # Console output - placed in grid row 1 to take remaining space
         console_frame = ttk.LabelFrame(console_container, text="Console Output")
-        console_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(2, 5))
+        console_frame.grid(row=1, column=0, sticky='nsew', padx=5, pady=(2, 5))
+        console_frame.columnconfigure(0, weight=1)
+        console_frame.rowconfigure(1, weight=1)
 
+        # Add toggle heartbeat button with heart icon (top of console_frame)
+        # Initialize heart_icon attribute if not present
+        if not hasattr(self, 'heart_icon'):
+            self.heart_icon = self.macro_panel._load_icon('heart')
+        toggle_heartbeat_button = ttk.Button(
+            console_frame,
+            image=self.heart_icon,
+            command=self.toggle_heartbeat,
+            text="Heartbeat",
+            compound='left'
+        )
+        # Place the button using grid (console_frame uses grid internally)
+        toggle_heartbeat_button.grid(row=0, column=0, padx=5, pady=5, sticky='w')
+
+        # Console scrolled text occupies remaining space (row 1)
         self.console = scrolledtext.ScrolledText(
             console_frame,
             height=8,
@@ -531,7 +568,86 @@ class MainWindow:
             fg="green",
             insertbackground="green"
         )
-        self.console.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.console.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
+
+    def toggle_heartbeat(self):
+        """Toggle periodic heartbeat pings to the controller.
+
+        This toggles an internal flag and starts/stops a small loop that sends
+        a lightweight heartbeat. The implementation tries to call
+        communicator.send_heartbeat() if available, otherwise falls back to
+        communicator.get_state() as a probe.
+        """
+        try:
+            if not hasattr(self, '_heartbeat_enabled'):
+                self._heartbeat_enabled = False
+
+            # Flip the flag
+            self._heartbeat_enabled = not self._heartbeat_enabled
+
+            if self._heartbeat_enabled:
+                self._log_message("Heartbeat enabled", "cyan")
+                # Start the loop immediately
+                try:
+                    # Ensure any existing scheduled loop is not duplicated
+                    if not hasattr(self, '_heartbeat_loop_scheduled') or not self._heartbeat_loop_scheduled:
+                        self._heartbeat_loop_scheduled = True
+                        self._heartbeat_loop()
+                except Exception:
+                    # Fallback: always call the loop
+                    self._heartbeat_loop()
+            else:
+                self._log_message("Heartbeat disabled", "cyan")
+                # Loop will stop naturally on next check because _heartbeat_enabled is False
+        except Exception as e:
+            self._log_message(f"Error toggling heartbeat: {e}", "red")
+
+    def _heartbeat_loop(self):
+        """Internal loop that runs on the Tk main thread via after().
+
+        Sends a heartbeat once per second while _heartbeat_enabled is True.
+        """
+        try:
+            # Clear scheduled flag - will be set again if re-scheduled
+            self._heartbeat_loop_scheduled = False
+
+            if not getattr(self, '_heartbeat_enabled', False):
+                return
+
+            # Attempt to send a heartbeat using the communicator API if available
+            try:
+                if hasattr(self, 'communicator') and self.communicator:
+                    # Prefer a dedicated send_heartbeat method if present
+                    if hasattr(self.communicator, 'send_heartbeat'):
+                        try:
+                            ok = self.communicator.send_heartbeat()
+                            self._log_message("Heartbeat sent", "cyan" if ok else "red")
+                        except Exception as e:
+                            self._log_message(f"Heartbeat send failed: {e}", "red")
+                    else:
+                        # Fallback probe: get_state() to keep connection alive
+                        try:
+                            _ = self.communicator.get_state()
+                            self._log_message("Heartbeat probe (get_state) executed", "cyan")
+                        except Exception as e:
+                            self._log_message(f"Heartbeat probe failed: {e}", "red")
+                else:
+                    # No communicator available yet; just log tick
+                    self._log_message("Heartbeat tick (no communicator)", "cyan")
+            except Exception as e:
+                self._log_message(f"Heartbeat exception: {e}", "red")
+
+            # Schedule next heartbeat in 1000ms if still enabled
+            if getattr(self, '_heartbeat_enabled', False):
+                self._heartbeat_loop_scheduled = True
+                self.root.after(1000, self._heartbeat_loop)
+        except Exception as e:
+            # Ensure any unexpected errors are visible in console but don't crash the UI
+            print(f"ERROR in _heartbeat_loop: {e}")
+            try:
+                self._log_message(f"ERROR in heartbeat loop: {e}", "red")
+            except Exception:
+                pass
 
     def _setup_status_bar(self):
         """Setup the status bar."""
