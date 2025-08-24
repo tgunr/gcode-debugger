@@ -34,6 +34,7 @@ def main():
     create_icon('folder', '#FFD700')  # Gold color for folders
     create_icon('file', '#87CEEB')    # Light blue for regular files
     create_icon('macro', '#98FB98')   # Pale green for macro files
+    create_icon('heart', 'red')
     
     print("Icons generated successfully!")
 
